@@ -41,6 +41,7 @@ extern int slow_exit;
 extern int retry_aborted_transaction;
 extern int no_reset_counters;
 extern int backoff_aborted_transaction;
+extern int dynamic_workload;
 
 class scoped_db_thread_ctx {
 public:
@@ -171,7 +172,17 @@ public:
 
   inline ssize_t get_size_delta() const { return size_delta; }
 
+  virtual void reset_workload(size_t nthreads, size_t idx) {}
+
 protected:
+
+  void clear() {
+    ntxn_commits = 0;
+    ntxn_aborts = 0;
+    latency_numer_us = 0;
+    backoff_shifts = 0;
+    size_delta = 0;
+  }
 
   virtual void on_run_setup() {}
 
@@ -217,6 +228,7 @@ public:
     : db(db), barrier_a(nthreads), barrier_b(1) {}
   virtual ~bench_runner() {}
   void run();
+  void dynamic_run();
 protected:
   // only called once
   virtual std::vector<bench_loader*> make_loaders() = 0;

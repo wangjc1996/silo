@@ -80,6 +80,7 @@ main(int argc, char **argv)
     static struct option long_options[] =
     {
       {"verbose"                    , no_argument       , &verbose                   , 1}   ,
+      {"dynamic-workload"           , no_argument       , &dynamic_workload          , 1}   ,
       {"parallel-loading"           , no_argument       , &enable_parallel_loading   , 1}   ,
       {"pin-cpus"                   , no_argument       , &pin_cpus                  , 1}   ,
       {"slow-exit"                  , no_argument       , &slow_exit                 , 1}   ,

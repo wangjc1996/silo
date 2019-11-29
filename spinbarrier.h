@@ -46,6 +46,12 @@ public:
       nop_pause();
   }
 
+  void
+  reset(size_t reset)
+  {
+    n = reset;
+  }
+
 private:
   volatile size_t n;
 };

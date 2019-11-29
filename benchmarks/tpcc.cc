@@ -602,6 +602,25 @@ public:
     return w;
   }
 
+  virtual void reset_workload(size_t nthreads, size_t idx) OVERRIDE {
+    clear();
+    if (NumWarehouses() <= nthreads) {
+      warehouse_id_start = (idx % NumWarehouses()) + 1;
+      warehouse_id_end = (idx % NumWarehouses()) + 2;
+    } else {
+      const unsigned nwhse_per_partition = NumWarehouses() / nthreads;
+      const unsigned wstart = idx * nwhse_per_partition;
+      const unsigned wend   = (idx + 1 == nthreads) ?
+        NumWarehouses() : (idx + 1) * nwhse_per_partition;
+      warehouse_id_start = wstart + 1;
+      warehouse_id_end = wend + 1;
+    }
+    INVARIANT(warehouse_id_start >= 1);
+    INVARIANT(warehouse_id_start <= NumWarehouses());
+    INVARIANT(warehouse_id_end > warehouse_id_start);
+    INVARIANT(warehouse_id_end <= (NumWarehouses() + 1));
+  }
+
 protected:
 
   virtual void
@@ -622,8 +641,8 @@ protected:
   }
 
 private:
-  const uint warehouse_id_start;
-  const uint warehouse_id_end;
+  uint warehouse_id_start;
+  uint warehouse_id_end;
   int32_t last_no_o_ids[10]; // XXX(stephentu): hack
 
   // some scratch buffer space
@@ -2210,5 +2229,8 @@ tpcc_do_test(abstract_db *db, int argc, char **argv)
   }
 
   tpcc_bench_runner r(db);
-  r.run();
+  if (dynamic_workload)
+    r.dynamic_run();
+  else
+    r.run();
 }
