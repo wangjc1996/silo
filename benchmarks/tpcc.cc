@@ -515,7 +515,7 @@ public:
     INVARIANT(warehouse_id_start <= NumWarehouses());
     INVARIANT(warehouse_id_end > warehouse_id_start);
     INVARIANT(warehouse_id_end <= (NumWarehouses() + 1));
-    NDB_MEMSET(&last_no_o_ids[0], 0, sizeof(last_no_o_ids));
+    // NDB_MEMSET(&last_no_o_ids[0], 0, sizeof(last_no_o_ids));
     if (verbose) {
       cerr << "tpcc: worker id " << worker_id
         << " => warehouses [" << warehouse_id_start
@@ -643,13 +643,21 @@ protected:
 private:
   uint warehouse_id_start;
   uint warehouse_id_end;
-  int32_t last_no_o_ids[10]; // XXX(stephentu): hack
+  // int32_t last_no_o_ids[10]; // XXX(stephentu): hack
 
   // some scratch buffer space
   string obj_key0;
   string obj_key1;
   string obj_v;
 };
+
+union access_info {
+  uint32_t last_no_o_ids;
+  char padding[CACHELINE_SIZE];
+  access_info():last_no_o_ids(0){}
+} CACHE_ALIGNED;
+
+access_info dist_last_id[64][10];
 
 class tpcc_warehouse_loader : public bench_loader, public tpcc_worker_mixin {
 public:
@@ -1477,8 +1485,9 @@ tpcc_worker::txn_delivery()
       g_enable_partition_locks ? &LockForPartition(warehouse_id) : nullptr);
   try {
     ssize_t ret = 0;
+    int32_t last_no_o_id[10];
     for (uint d = 1; d <= NumDistrictsPerWarehouse(); d++) {
-      const new_order::key k_no_0(warehouse_id, d, last_no_o_ids[d - 1]);
+      const new_order::key k_no_0(warehouse_id, d, dist_last_id[warehouse_id - 1][ d - 1].last_no_o_ids);
       const new_order::key k_no_1(warehouse_id, d, numeric_limits<int32_t>::max());
       new_order_scan_callback new_order_c;
       {
@@ -1489,7 +1498,8 @@ tpcc_worker::txn_delivery()
       const new_order::key *k_no = new_order_c.get_key();
       if (unlikely(!k_no))
         continue;
-      last_no_o_ids[d - 1] = k_no->no_o_id + 1; // XXX: update last seen
+      last_no_o_id[d - 1] = k_no->no_o_id + 1; // XXX: update last seen
+      dist_last_id[warehouse_id - 1][ d - 1].last_no_o_ids = last_no_o_id[d - 1];
 
       const oorder::key k_oo(warehouse_id, d, k_no->no_o_id);
       if (unlikely(!tbl_oorder(warehouse_id)->get(txn, Encode(obj_key0, k_oo), obj_v))) {
