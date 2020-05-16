@@ -26,6 +26,8 @@
 using namespace std;
 using namespace util;
 
+#define PINCPU
+
 #define TPCC_TABLE_LIST(x) \
   x(customer) \
   x(customer_name_idx) \
@@ -64,6 +66,22 @@ static constexpr inline ALWAYS_INLINE size_t
 NumCustomersPerDistrict()
 {
   return 3000;
+}
+
+static inline void 
+bind_thread(uint worker_id)
+{
+
+#ifdef PINCPU
+  const size_t cpu = worker_id % coreid::num_cpus_online();
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  CPU_SET(cpu, &cpuset);
+  int s = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+  if (s != 0)
+      fprintf(stderr, "pthread_setaffinity_np");
+#endif
+
 }
 
 // T must implement lock()/unlock(). Both must *not* throw exceptions
@@ -607,6 +625,8 @@ protected:
   virtual void
   on_run_setup() OVERRIDE
   {
+    bind_thread(worker_id);
+    
     if (!pin_cpus)
       return;
     const size_t a = worker_id % coreid::num_cpus_online();
