@@ -271,8 +271,10 @@ bench_runner::run()
   const double agg_throughput = double(n_commits) / elapsed_sec;
   const double avg_per_core_throughput = agg_throughput / double(workers.size());
 
-  const double agg_abort_rate = double(n_aborts) / elapsed_sec;
-  const double avg_per_core_abort_rate = agg_abort_rate / double(workers.size());
+  const double agg_abort_throughput = double(n_aborts) / elapsed_sec;
+  const double avg_per_core_abort_rate = agg_abort_throughput / double(workers.size());
+
+  const double agg_abort_rate = double(n_aborts) / (n_commits + n_aborts);//elapsed_sec;
 
   // we can use n_commits here, because we explicitly wait for all txns
   // run to be durable
@@ -338,7 +340,7 @@ bench_runner::run()
     cerr << "avg_per_core_persist_throughput: " << avg_per_core_persist_throughput << " ops/sec/core" << endl;
     cerr << "avg_latency: " << avg_latency_ms << " ms" << endl;
     cerr << "avg_persist_latency: " << avg_persist_latency_ms << " ms" << endl;
-    cerr << "agg_abort_rate: " << agg_abort_rate << " aborts/sec" << endl;
+    cerr << "agg_abort_throughput: " << agg_abort_throughput << " aborts/sec" << endl;
     cerr << "avg_per_core_abort_rate: " << avg_per_core_abort_rate << " aborts/sec/core" << endl;
     cerr << "txn breakdown: " << format_list(agg_txn_counts.begin(), agg_txn_counts.end()) << endl;
     cerr << "--- system counters (for benchmark) ---" << endl;
@@ -363,11 +365,14 @@ bench_runner::run()
   }
 
   // output for plotting script
-  cout << agg_throughput << " "
-       << agg_persist_throughput << " "
-       << avg_latency_ms << " "
-       << avg_persist_latency_ms << " "
-       << agg_abort_rate << endl;
+  cout << "RESULT "
+      << "agg_throughput(" << agg_throughput << "),"
+      << "agg_persist_throughput(" << agg_persist_throughput << "),"
+      << "avg_latency_ms(" << avg_latency_ms << "),"
+      << "avg_persist_latency_ms(" << avg_persist_latency_ms << "),"
+      << "agg_abort_throughput(" << agg_abort_throughput << "),"
+      << "agg_abort_rate(" << agg_abort_rate << "),"
+      << "0" <<endl;
   cout.flush();
 
   if (!slow_exit)
