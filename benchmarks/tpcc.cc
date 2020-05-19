@@ -25,6 +25,7 @@
 #include "tpcc.h"
 using namespace std;
 using namespace util;
+static bool profile = true;
 
 #define PINCPU
 
@@ -1298,7 +1299,15 @@ tpcc_worker::txn_new_order()
   //   max_read_set_size : 15
   //   max_write_set_size : 15
   //   num_txn_contexts : 9
+  uint64_t start_piece_beg = 0;
+  if(profile)
+    start_piece_beg = rdtsc();
+
   void *txn = db->new_txn(txn_flags, arena, txn_buf(), abstract_db::HINT_TPCC_NEW_ORDER);
+
+  if(profile)
+    txn_init_time += rdtsc() - start_piece_beg ;
+
   scoped_str_arena s_arena(arena);
   scoped_multilock<spinlock> mlock;
   if (g_enable_partition_locks) {
@@ -1318,6 +1327,10 @@ tpcc_worker::txn_new_order()
     mlock.multilock();
   }
   try {
+    uint64_t tmp_start = 0;
+      if(profile)
+      tmp_start = rdtsc();
+
     ssize_t ret = 0;
     const customer::key k_c(warehouse_id, districtID, customerID);
     ALWAYS_ASSERT(tbl_customer(warehouse_id)->get(txn, Encode(obj_key0, k_c), obj_v));
@@ -1409,8 +1422,23 @@ tpcc_worker::txn_new_order()
       ret += order_line_sz;
     }
 
+    if(profile)
+      txn_op_time += rdtsc() - tmp_start ;
+
     measure_txn_counters(txn, "txn_new_order");
-    if (likely(db->commit_txn(txn)))
+
+    if(profile)
+      tmp_start = rdtsc();
+
+    bool res = db->commit_txn(txn);
+
+    if(profile)
+      txn_commit_time += rdtsc() - tmp_start ;
+
+    if(profile)
+      txn_whole_time += rdtsc() - start_piece_beg ;
+
+    if (res)
       return txn_result(true, ret);
   } catch (abstract_db::abstract_abort_exception &ex) {
     db->abort_txn(txn);

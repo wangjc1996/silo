@@ -247,16 +247,34 @@ bench_runner::run()
   size_t n_commits = 0;
   size_t n_aborts = 0;
   uint64_t latency_numer_us = 0;
+
+  uint64_t txn_whole_time = 0;
+  uint64_t txn_init_time = 0;
+  uint64_t txn_op_time = 0;
+  uint64_t txn_commit_time = 0;
+
   for (size_t i = 0; i < nthreads; i++) {
     n_commits += workers[i]->get_ntxn_commits();
     n_aborts += workers[i]->get_ntxn_aborts();
     latency_numer_us += workers[i]->get_latency_numer_us();
+
+    txn_whole_time += workers[i]->get_txn_whole_time();
+    txn_init_time += workers[i]->get_txn_init_time();
+    txn_op_time += workers[i]->get_txn_op_time();
+    txn_commit_time += workers[i]->get_txn_commit_time();
   }
   const auto persisted_info = db->get_ntxn_persisted();
 
   const unsigned long elapsed = t.lap(); // lap() must come after do_txn_finish(),
                                          // because do_txn_finish() potentially
                                          // waits a bit
+
+  cout << "TIME PERF "
+       << "txn_whole_time(" << (double(txn_whole_time) / double(n_commits)) << "),"
+       << "txn_init_time(" << (double(txn_init_time) / double(n_commits)) << "),"
+       << "txn_op_time(" << (double(txn_op_time) / double(n_commits)) << "),"
+       << "txn_commit_time(" << (double(txn_commit_time) / double(n_commits)) << ")"
+       << endl;
 
   // various sanity checks
   ALWAYS_ASSERT(get<0>(persisted_info) == get<1>(persisted_info));

@@ -25,6 +25,26 @@ using namespace util;
 static size_t nkeys;
 static const size_t YCSBRecordSize = 100;
 
+static bool profile = true;
+
+#define PINCPU
+
+static inline void
+bind_thread(uint worker_id)
+{
+
+#ifdef PINCPU
+  const size_t cpu = worker_id % coreid::num_cpus_online();
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  CPU_SET(cpu, &cpuset);
+  int s = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+  if (s != 0)
+      fprintf(stderr, "pthread_setaffinity_np");
+#endif
+
+}
+
 // [R, W, RMW, Scan]
 // we're missing remove for now
 // the default is a modification of YCSB "A" we made (80/20 R/W)
@@ -49,14 +69,54 @@ public:
   txn_result
   txn_read()
   {
+
+    uint64_t start_piece_beg = 0;
+
+    if(profile)
+      start_piece_beg = rdtsc();
     void * const txn = db->new_txn(txn_flags, arena, txn_buf(), abstract_db::HINT_KV_GET_PUT);
+    if(profile)
+        txn_init_time += rdtsc() - start_piece_beg ;
     scoped_str_arena s_arena(arena);
     try {
       const uint64_t k = r.next() % nkeys;
-      ALWAYS_ASSERT(tbl->get(txn, u64_varkey(k).str(obj_key0), obj_v));
+
+      // ALWAYS_ASSERT(tbl->get(txn, u64_varkey(k).str(obj_key0), obj_v));
+
+      {
+        uint64_t tmp_start = 0;
+        if(profile)
+          tmp_start = rdtsc();
+        
+        ALWAYS_ASSERT(tbl->get(txn, u64_varkey(k).str(obj_key0), obj_v));
+        
+
+        if(profile)
+          txn_op_time += rdtsc() - tmp_start ;
+      }
+      
       computation_n += obj_v.size();
+      
       measure_txn_counters(txn, "txn_read");
-      if (likely(db->commit_txn(txn)))
+      // if (likely(db->commit_txn(txn)))
+
+      bool res = false;
+      {
+        uint64_t tmp_start = 0;
+        if(profile)
+          tmp_start = rdtsc();
+        res = db->commit_txn(txn);
+
+        // res = true;
+
+        if(profile)
+          txn_commit_time += rdtsc() - tmp_start ;
+      }
+
+      if(profile)
+        txn_whole_time += rdtsc() - start_piece_beg ;
+
+      if (likely(res))
         return txn_result(true, 0);
     } catch (abstract_db::abstract_abort_exception &ex) {
       db->abort_txn(txn);

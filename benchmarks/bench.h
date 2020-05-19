@@ -116,7 +116,11 @@ public:
       ntxn_commits(0), ntxn_aborts(0),
       latency_numer_us(0),
       backoff_shifts(0), // spin between [0, 2^backoff_shifts) times before retry
-      size_delta(0)
+      size_delta(0),
+      txn_whole_time(0),
+      txn_init_time(0),
+      txn_op_time(0),
+      txn_commit_time(0)
   {
     txn_obj_buf.reserve(str_arena::MinStrReserveLength);
     txn_obj_buf.resize(db->sizeof_txn_object(txn_flags));
@@ -149,6 +153,11 @@ public:
   inline size_t get_ntxn_aborts() const { return ntxn_aborts; }
 
   inline uint64_t get_latency_numer_us() const { return latency_numer_us; }
+
+  inline uint64_t get_txn_whole_time() const { return txn_whole_time; }
+  inline uint64_t get_txn_init_time() const { return txn_init_time; }
+  inline uint64_t get_txn_op_time() const { return txn_op_time; }
+  inline uint64_t get_txn_commit_time() const { return txn_commit_time; }
 
   inline double
   get_avg_latency_us() const
@@ -205,6 +214,11 @@ protected:
 
   std::string txn_obj_buf;
   str_arena arena;
+
+  uint64_t txn_whole_time;
+  uint64_t txn_init_time;
+  uint64_t txn_op_time;
+  uint64_t txn_commit_time;
 };
 
 class bench_runner {
