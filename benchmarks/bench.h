@@ -113,14 +113,16 @@ public:
       r(seed), db(db), open_tables(open_tables),
       barrier_a(barrier_a), barrier_b(barrier_b),
       // the ntxn_* numbers are per worker
-      ntxn_commits(0), ntxn_aborts(0),
+      ntxn_commits(0), ntxn_aborts(0), nnew_commits(0), npay_commits(0), ndel_commits(0),
       latency_numer_us(0),
       backoff_shifts(0), // spin between [0, 2^backoff_shifts) times before retry
       size_delta(0),
       txn_whole_time(0),
       txn_init_time(0),
       txn_op_time(0),
-      txn_commit_time(0)
+      txn_commit_time(0),
+      txn_get_time(0),
+      txn_put_time(0)
   {
     txn_obj_buf.reserve(str_arena::MinStrReserveLength);
     txn_obj_buf.resize(db->sizeof_txn_object(txn_flags));
@@ -151,6 +153,9 @@ public:
 
   inline size_t get_ntxn_commits() const { return ntxn_commits; }
   inline size_t get_ntxn_aborts() const { return ntxn_aborts; }
+  inline size_t get_nnew_commits() const { return nnew_commits; }
+  inline size_t get_npay_commits() const { return npay_commits; }
+  inline size_t get_ndel_commits() const { return ndel_commits; }
 
   inline uint64_t get_latency_numer_us() const { return latency_numer_us; }
 
@@ -158,6 +163,8 @@ public:
   inline uint64_t get_txn_init_time() const { return txn_init_time; }
   inline uint64_t get_txn_op_time() const { return txn_op_time; }
   inline uint64_t get_txn_commit_time() const { return txn_commit_time; }
+  inline uint64_t get_txn_get_time() const { return txn_get_time; }
+  inline uint64_t get_txn_put_time() const { return txn_put_time; }
 
   inline double
   get_avg_latency_us() const
@@ -197,6 +204,9 @@ protected:
 private:
   size_t ntxn_commits;
   size_t ntxn_aborts;
+  size_t nnew_commits;
+  size_t npay_commits;
+  size_t ndel_commits;
   uint64_t latency_numer_us;
   unsigned backoff_shifts;
 
@@ -219,6 +229,8 @@ protected:
   uint64_t txn_init_time;
   uint64_t txn_op_time;
   uint64_t txn_commit_time;
+  uint64_t txn_get_time;
+  uint64_t txn_put_time;
 };
 
 class bench_runner {

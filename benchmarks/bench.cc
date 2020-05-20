@@ -129,6 +129,18 @@ bench_worker::run()
         const unsigned long old_seed = r.get_seed();
         const auto ret = workload[i].fn(this);
         if (likely(ret.first)) {
+          switch (ret.second)
+          {
+            case 1:
+              ++nnew_commits;
+              break;
+            case 2:
+              ++npay_commits;
+              break;
+            case 3:
+              ++ndel_commits;
+              break;
+          }
           ++ntxn_commits;
           latency_numer_us += t.lap();
           backoff_shifts >>= 1;
@@ -246,22 +258,33 @@ bench_runner::run()
   db->do_txn_finish(); // waits for all worker txns to persist
   size_t n_commits = 0;
   size_t n_aborts = 0;
+  size_t n_new_commits = 0;
+  size_t n_pay_commits = 0;
+  size_t n_del_commits = 0;
+
   uint64_t latency_numer_us = 0;
 
   uint64_t txn_whole_time = 0;
   uint64_t txn_init_time = 0;
   uint64_t txn_op_time = 0;
   uint64_t txn_commit_time = 0;
+  uint64_t txn_get_time = 0;
+  uint64_t txn_put_time = 0;
 
   for (size_t i = 0; i < nthreads; i++) {
     n_commits += workers[i]->get_ntxn_commits();
     n_aborts += workers[i]->get_ntxn_aborts();
+    n_new_commits += workers[i]->get_nnew_commits();
+    n_pay_commits += workers[i]->get_npay_commits();
+    n_del_commits += workers[i]->get_ndel_commits();
     latency_numer_us += workers[i]->get_latency_numer_us();
 
     txn_whole_time += workers[i]->get_txn_whole_time();
     txn_init_time += workers[i]->get_txn_init_time();
     txn_op_time += workers[i]->get_txn_op_time();
     txn_commit_time += workers[i]->get_txn_commit_time();
+    txn_get_time += workers[i]->get_txn_get_time();
+    txn_put_time += workers[i]->get_txn_put_time();
   }
   const auto persisted_info = db->get_ntxn_persisted();
 
@@ -274,6 +297,8 @@ bench_runner::run()
        << "txn_init_time(" << (double(txn_init_time) / double(n_commits)) << "),"
        << "txn_op_time(" << (double(txn_op_time) / double(n_commits)) << "),"
        << "txn_commit_time(" << (double(txn_commit_time) / double(n_commits)) << ")"
+       << "txn_get_time(" << (double(txn_get_time) / double(n_new_commits)) << ")"
+       << "txn_put_time(" << (double(txn_put_time) / double(n_new_commits)) << ")"
        << endl;
 
   // various sanity checks

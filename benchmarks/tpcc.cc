@@ -49,6 +49,14 @@ NumWarehouses()
   return (size_t) scale_factor;
 }
 
+enum tpcc_tx_types
+{
+  neworder_type = 1,
+  payment_type,
+  delivery_type,
+  end_type
+};
+
 // config constants
 
 static constexpr inline ALWAYS_INLINE size_t
@@ -1300,6 +1308,8 @@ tpcc_worker::txn_new_order()
   //   max_write_set_size : 15
   //   num_txn_contexts : 9
   uint64_t start_piece_beg = 0;
+  uint64_t get_time = 0;
+  uint64_t put_time = 0;
   if(profile)
     start_piece_beg = rdtsc();
 
@@ -1333,7 +1343,15 @@ tpcc_worker::txn_new_order()
 
     ssize_t ret = 0;
     const customer::key k_c(warehouse_id, districtID, customerID);
+    if(profile)
+    {
+      get_time = rdtsc();
+    }
     ALWAYS_ASSERT(tbl_customer(warehouse_id)->get(txn, Encode(obj_key0, k_c), obj_v));
+    if(profile)
+    {
+      get_time = rdtsc() - get_time;
+    }
     customer::value v_c_temp;
     const customer::value *v_c = Decode(obj_v, v_c_temp);
     checker::SanityCheckCustomer(&k_c, v_c);
@@ -1362,7 +1380,15 @@ tpcc_worker::txn_new_order()
     if (!g_new_order_fast_id_gen) {
       district::value v_d_new(*v_d);
       v_d_new.d_next_o_id++;
+      if(profile)
+      {
+        put_time = rdtsc();
+      }
       tbl_district(warehouse_id)->put(txn, Encode(str(), k_d), Encode(str(), v_d_new));
+      if(profile)
+      {
+        put_time = rdtsc() - put_time;
+      }
     }
 
     const oorder::key k_oo(warehouse_id, districtID, k_no.no_o_id);
@@ -1439,11 +1465,18 @@ tpcc_worker::txn_new_order()
       txn_whole_time += rdtsc() - start_piece_beg ;
 
     if (res)
-      return txn_result(true, ret);
+    {
+      if(profile)
+      {
+        txn_get_time += get_time;
+        txn_put_time += put_time;
+      }
+      return txn_result(true, neworder_type);
+    }
   } catch (abstract_db::abstract_abort_exception &ex) {
     db->abort_txn(txn);
   }
-  return txn_result(false, 0);
+  return txn_result(false, neworder_type);
 }
 
 class new_order_scan_callback : public abstract_ordered_index::scan_callback {
@@ -1580,11 +1613,11 @@ tpcc_worker::txn_delivery()
     }
     measure_txn_counters(txn, "txn_delivery");
     if (likely(db->commit_txn(txn)))
-      return txn_result(true, ret);
+      return txn_result(true, delivery_type);
   } catch (abstract_db::abstract_abort_exception &ex) {
     db->abort_txn(txn);
   }
-  return txn_result(false, 0);
+  return txn_result(false, delivery_type);
 }
 
 static event_avg_counter evt_avg_cust_name_idx_scan_size("avg_cust_name_idx_scan_size");
@@ -1741,11 +1774,11 @@ tpcc_worker::txn_payment()
 
     measure_txn_counters(txn, "txn_payment");
     if (likely(db->commit_txn(txn)))
-      return txn_result(true, ret);
+      return txn_result(true, payment_type);
   } catch (abstract_db::abstract_abort_exception &ex) {
     db->abort_txn(txn);
   }
-  return txn_result(false, 0);
+  return txn_result(false, payment_type);
 }
 
 class order_line_nop_callback : public abstract_ordered_index::scan_callback {
