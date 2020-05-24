@@ -15,6 +15,7 @@
 
 #include <set>
 #include <vector>
+#include <random>
 
 #include "../txn.h"
 #include "../macros.h"
@@ -29,8 +30,10 @@
 using namespace std;
 using namespace util;
 
+
 #define PINCPU
 #define MAXCPU 64
+#define GUASSIAN_DIST
 
 #define TEST_TABLE_LIST(x) \
   x(test) 
@@ -38,19 +41,32 @@ using namespace util;
 
 static const size_t TXTTPES = 1;
 
-static const size_t records_per_table = 10000;
+
+
+static const int64_t records_per_table = 1024*1024;
+
+
 static bool profile = false;
 static size_t txn_length = 10;
-static float conflict_rate = 1.0/records_per_table;
-static float user_abort_rate = 0;
+static int user_abort_rate = 0;
 static uint64_t access_range = 10;
+
 
 static float read_rate = 0;
 static int read_first = 0;
+static int piece_access_recs = 1;
+// static int uniform_access = 0;
 
 static unsigned g_txn_workload_mix[] = {100};
 
+
+enum  MICRO_TYPES
+{
+  MICROBENCH = 1,
+};
+
 #define PROFILE
+
 
 
 struct micro_profile {
@@ -111,14 +127,11 @@ static void print_profile()
   }
 
   avg_prof.print_avg();
+
+  fprintf(stderr, "========================Internal Profiling=========================\n");
+
 }
 
-
-
-enum  MICRO_TYPES
-{
-  MICROBENCH = 1,
-};
 
 
 static inline ALWAYS_INLINE int
@@ -159,6 +172,7 @@ bind_thread(uint worker_id)
 }
 
 
+
 class micro_worker : public bench_worker {
 public:
   micro_worker(unsigned int worker_id,
@@ -168,115 +182,220 @@ public:
     : bench_worker(worker_id, true, seed, db,
                    open_tables, barrier_a, barrier_b),
       tbl(open_tables.at("TESTTABLE")),
+      distribution(2.5),
       computation_n(0),
       pidx(0)
-  {}
+  {
+    computation_n = RandomNumber(r, 0, 1000000);
+  }
 
   txn_result
   txn_micro()
   {
 
-    string obj_buf;
     bool res = false;
 
     size_t read_records = read_rate * txn_length;
     size_t write_records = txn_length - read_records;
 
+    bool user_abort = (user_abort_rate > 0);
+    uint64_t abort_op = txn_length + 1;
 
-    uint64_t beg_time = 0;
+    if(user_abort) {
+
+      uint64_t abort_n = 100 / user_abort_rate;
+      computation_n++;
+
+      if(computation_n % abort_n == 0) {
+        abort_op = RandomNumber(r, 0, txn_length - 1);
+      } 
+    }
+
+    uint64_t start_txn_beg = 0;
     if(profile)
-      beg_time = rdtsc();
+      start_txn_beg = rdtsc();
 
     scoped_str_arena s_arena(arena);
     void * const txn = db->new_txn(txn_flags, arena, txn_buf(), abstract_db::HINT_MICRO);
 
     if(profile)
-      pdata[pidx].txnstarttime += rdtsc() - beg_time;
-
+      pdata[pidx].txnstarttime += rdtsc() - start_txn_beg;
 
     try {
+          int base = generate_key(0);
 
-        for(size_t i = 0; i < txn_length; i++) {
+          for(size_t i = 0; i < txn_length; i++) {
+              int n;
 
-            int min = 0;
-            int max = 0;
+              if( i == 0) {
+                n = base;
+              } else {
+                n =   generate_key(i);
+              }
 
-            if(conflict_rate == 0) {
+              const test::key k(n);
 
-              min = i * records_per_table + (records_per_table / MAXCPU) * (worker_id % MAXCPU);
+              uint64_t get_beg = 0; 
+              if(profile)
+                get_beg = rdtsc();
 
-              max = i * records_per_table + (records_per_table / MAXCPU) * ((worker_id  + 1 )% MAXCPU) - 1;
+                tbl->get(txn, Encode(obj_key0, k), obj_v);
 
-            } else {
+              if(profile)
+                pdata[pidx].gettime += rdtsc() - get_beg ;
 
-              min = i * records_per_table;
-              max = i * records_per_table + access_range - 1;
-    
-            }
+              test::value temp; 
+              const test::value *v = Decode(obj_v, temp);
 
-            uint32_t n =  RandomNumber(r, min, max);
-
-
-            // printf("Thread{%d} n %lu min %lu max %lu\n", worker_id, n, i*records_per_table, i * records_per_table + access_range - 1);
-            // n += i * records_per_table;
-
-            const test::key k(n);
-            string test_v;
-
-
-            uint64_t get_beg = 0;
-            if(profile)
-              get_beg = rdtsc();
-
-
-            ALWAYS_ASSERT(tbl->get(txn, Encode(obj_key0, k), test_v));
-            
-            if(profile)
-              pdata[pidx].gettime += rdtsc() - get_beg ;
-
-
-            test::value temp; 
-            const test::value *v = Decode(test_v, temp);
-
-            if(read_first && read_records > 0)
-              read_records--;
-            
-            if((read_first && read_records == 0) ||
-              ((!read_first) && write_records > 0)) {
-
-              test::value v_new(*v);
-              v_new.t_v_count++;   
-              ALWAYS_ASSERT(v_new.t_v_count > 0);
+              if(read_first && read_records > 0)
+                read_records--;
+              
+              if((read_first && read_records == 0) ||
+                ((!read_first) && write_records > 0)) {
 
 
               uint64_t put_beg = 0;
               if(profile)
                 put_beg = rdtsc();
 
+              test::value v_new(*v);
+              v_new.t_v_count++;   
+              ALWAYS_ASSERT(v_new.t_v_count > 0);
+              tbl->put(txn, Encode(str(), k), Encode(obj_v, v_new));
 
-              tbl->put(txn, Encode(str(), k), Encode(str(), v_new));
-
-              if(profile)
+              if(profile) 
                 pdata[pidx].puttime += rdtsc() - put_beg ;
 
 
-              if(!read_first)
-                write_records--;
-            }
-
-        }
+                if(!read_first)
+                  write_records--;
+              }
+          }
 
 
         uint64_t end_txn_beg = 0;
         if(profile)
           end_txn_beg = rdtsc();
 
+        //fprintf(stderr, "%ld, %ld, %ld\n", oldv, newv, coreid::core_id());
+        res = db->commit_txn(txn);
+        //ALWAYS_ASSERT(res);
+
+        if(profile){
+          pdata[pidx].txncommittime += rdtsc() - end_txn_beg ;
+          pdata[pidx].succ++;
+        }
+
+
+      } catch (abstract_db::abstract_abort_exception &ex) {
+  
+        db->abort_txn(txn);
+      }
+
+    return txn_result(res, 0);
+  }
+
+  txn_result
+  txn_mul_micro()
+  {
+
+
+    bool user_abort = (user_abort_rate > 0);
+    uint64_t abort_op = txn_length + 1;
+
+    if(user_abort) {
+
+      uint64_t abort_n = 100 / user_abort_rate;
+
+      computation_n = r.next();
+
+      if(computation_n % abort_n == 0) {
+        abort_op = RandomNumber(r, 0, txn_length - 1);
+      }
+    }
+
+
+    bool res = false;
+
+
+    uint64_t start_txn_beg = 0;
+    if(profile)
+      start_txn_beg = rdtsc();
+
+    scoped_str_arena s_arena(arena);
+    void * const txn = db->new_txn(txn_flags, arena, txn_buf(), abstract_db::HINT_MICRO);
+
+    if(profile)
+      pdata[pidx].txnstarttime += rdtsc() - start_txn_beg;
+
+    try {
+
+          for(size_t i = 0; i < txn_length; i++) {
+
+              int base = generate_key(i);
+
+              std::vector<int> keys;
+              keys.push_back(base);
+
+              for(int j = 1; j < piece_access_recs; j++) {
+
+                  keys.push_back(RandomNumber(r, i * records_per_table, (i + 1) * records_per_table - 1));
+
+              }
+
+              std::sort(keys.begin(), keys.end());
+
+
+              uint64_t start_piece_beg = 0;
+              if(profile)
+                start_piece_beg = rdtsc();
+
+              for(int j = 0; j < piece_access_recs; j++) {
+                  
+                  
+                  // printf("W[%d] P[%lu] r[%d] rec[%d]\n", worker_id, i, j, keys[j]);
+
+                  const test::key k(keys[j]);
+
+                  uint64_t get_beg = 0; 
+
+                  ALWAYS_ASSERT(tbl->get(txn, Encode(obj_key0, k), obj_v));
+                  
+                  if(profile)
+                    pdata[pidx].gettime += rdtsc() - get_beg;
+                
+                  test::value temp; 
+                  const test::value *v = Decode(obj_v, temp);
+      
+                  test::value v_new(*v);
+                  v_new.t_v_count++;   
+                  ALWAYS_ASSERT(v_new.t_v_count > 0);
+
+                  uint64_t put_beg = 0;
+
+                  if(profile) 
+                    put_beg = rdtsc();
+                
+                  tbl->put(txn, Encode(str(), k), Encode(obj_v, v_new));
+
+                  if(profile) 
+                    pdata[pidx].puttime += rdtsc() - put_beg ;
+              
+              }
+
+              uint64_t end_piece_beg = 0;
+              if(profile)
+                end_piece_beg = rdtsc();
+
+          }
+
+        uint64_t end_txn_beg = 0;
 
         //fprintf(stderr, "%ld, %ld, %ld\n", oldv, newv, coreid::core_id());
         res = db->commit_txn(txn);
         //ALWAYS_ASSERT(res);
 
-        if(profile) {
+        if(profile){
           pdata[pidx].txncommittime += rdtsc() - end_txn_beg ;
           pdata[pidx].succ++;
         }
@@ -296,6 +415,12 @@ public:
     return static_cast<micro_worker *>(w)->txn_micro();
   }
 
+  static txn_result
+  TxnMultipleMicro(bench_worker *w)
+  {
+    return static_cast<micro_worker *>(w)->txn_mul_micro();
+  }
+
   virtual workload_desc_vec
   get_workload() const
   {
@@ -306,7 +431,7 @@ public:
       m += g_txn_workload_mix[i];
     ALWAYS_ASSERT(m == 100);
     if (g_txn_workload_mix[0])
-      w.push_back(workload_desc("Micro bench",  double(g_txn_workload_mix[0])/100.0, TxnMicro));
+      w.push_back(workload_desc("Micro bench",  double(g_txn_workload_mix[0])/100.0, TxnMultipleMicro));
     
     return w;
   }
@@ -316,14 +441,25 @@ protected:
   virtual void
   on_run_setup() OVERRIDE
   {
-    
     bind_thread(worker_id);
-    pidx = worker_id - coreid::num_cpus_online();
+    pidx = (worker_id - coreid::num_cpus_online());
   }
 
   inline ALWAYS_INLINE string &
   str() {
     return *arena.next();
+  }
+
+  inline ALWAYS_INLINE int 
+  generate_key(unsigned int table_id)
+  {
+
+#ifdef GUASSIAN_DIST
+    int offset = (int)ceil(distribution(generator) + worker_id) % access_range;//RandomNumber(r, 0, access_range - 1);
+#else  
+    int offset = RandomNumber(r, 0, access_range - 1);
+#endif    
+    return offset + table_id * records_per_table;  
   }
 
 private:
@@ -333,18 +469,21 @@ private:
   string obj_key1;
   string obj_v;
 
+  std::default_random_engine generator;
+  std::exponential_distribution<float> distribution;
+
   uint64_t computation_n;
-  uint32_t pidx;
+  int pidx;
 };
 
 class microbench_loader : public bench_loader{
 
 public:
-  microbench_loader(unsigned long seed,
+microbench_loader(unsigned long seed,
                         abstract_db *db,
                         const map<string, abstract_ordered_index *> &open_tables,
-                        int table)
-    : bench_loader(seed, db, open_tables), table_id(table)
+                        int64_t min, int64_t max)
+    : bench_loader(seed, db, open_tables), min(min), max(max)
   {}
 
 protected:
@@ -354,25 +493,20 @@ protected:
 
     abstract_ordered_index *tbl = open_tables.at("TESTTABLE");
     string obj_buf;
-    size_t batch_size = 1000;
+    int64_t batch_size = 512;
     ALWAYS_ASSERT(records_per_table > batch_size && records_per_table % batch_size == 0);
-
-    // size_t min = table_id * records_per_table / batch_size;
-    // size_t max = (table_id + 1) * records_per_table / batch_size;
-
-    size_t min = 0;
-    size_t max = (txn_length + 1) * records_per_table / batch_size;
+    ALWAYS_ASSERT(max > 0 && min >= 0);
 
     scoped_str_arena s_arena(arena);
     
-    for(size_t i = min; i < max; i++)
+    for(int64_t i = min/batch_size; i < max/batch_size; i++)
     {
 
       void * const txn = db->new_txn(txn_flags, arena, txn_buf(), abstract_db::HINT_MICRO_LOADER);
       try {
 
-        for (size_t n = i * batch_size; n < (i + 1) * batch_size; n++) {
-            // printf("load %lu in table %d\n", n, table_id);
+        for (int64_t n = i * batch_size; n < (i + 1) * batch_size; n++) {
+            // printf("load %ld\n", n);
             const test::key k(n);
             const test::value v(0, "TEST");
             tbl->insert(txn, Encode(k), Encode(obj_buf, v));
@@ -388,12 +522,13 @@ protected:
       }
     }
     
-    printf("Load Done [%d]\n", table_id);
+    printf("Load Done [%ld] --- [%ld]\n", min, max);
   }
 
 private:
-  int table_id;
+  int64_t min, max;
 };
+
 
 
 
@@ -413,8 +548,25 @@ protected:
   {
     vector<bench_loader *> ret;
 
-    // for(size_t i = 0; i < txn_length; i++)
-      ret.push_back(new microbench_loader(0, db, open_tables, 0));
+    uint64_t total = txn_length * records_per_table;
+    if(enable_parallel_loading) {
+
+      const unsigned alignment = coreid::num_cpus_online();
+      
+      ALWAYS_ASSERT(total % alignment == 0);
+
+      uint64_t range = total/alignment;
+
+      for(size_t i = 0; i < alignment; i++) {
+
+        uint64_t min = range * i;
+        uint64_t max = range * (i + 1);
+
+        ret.push_back(new microbench_loader(0, db, open_tables, min, max));
+      }
+    } else {
+        ret.push_back(new microbench_loader(0, db, open_tables, 0, total));
+    }
    
     return ret;
   }
@@ -437,8 +589,6 @@ protected:
     return ret;
   }
 
-
-
 };
 
 void
@@ -452,14 +602,13 @@ microbench_do_test(abstract_db *db, int argc, char **argv)
   while (1) {
     static struct option long_options[] =
     {
-      {"conflict-rate" , required_argument , 0, 'c'},
-      {"abort-rate"    , required_argument , 0, 'a'},
-      {"read-rate"     , required_argument , 0, 'r'},
+      {"access-range" , required_argument , 0, 'a'},
       {"txn-length"    , required_argument , 0, 't'},
-      {"read-first"    , no_argument       , &read_first , 1}
+      {"user-initial-abort"    , required_argument , 0, 'u'},
+      {"piece-access-recs"    , required_argument , 0, 'p'},
     };
     int option_index = 0;
-    int c = getopt_long(argc, argv, "c:d:r:t:", long_options, &option_index);
+    int c = getopt_long(argc, argv, "a:t:p:u", long_options, &option_index);
     if (c == -1)
       break;
 
@@ -473,35 +622,10 @@ microbench_do_test(abstract_db *db, int argc, char **argv)
         abort();
         break;
 
-        case 'c':
-        conflict_rate = atof(optarg);
-        cout<<"conflict rate "<< conflict_rate <<endl;
-
-        if(conflict_rate == 0)
-          break;
-        else if(conflict_rate < 1.0/records_per_table)
-          conflict_rate = 1.0/records_per_table;
-        else if(conflict_rate > 1)
-          conflict_rate = 1;
-        
-        break;
-
         case 'a':
-        user_abort_rate = atof(optarg);
-        cout<<"user abort rate "<< read_rate <<endl;
-
-        if(user_abort_rate > 1)
-          user_abort_rate = 1;
-
-        break;
-
-        case 'r':
-        read_rate = atof(optarg);
-        cout<<"read rate "<< read_rate <<endl;
-
-        if(read_rate > 1)
-          read_rate = 1;
-
+        access_range = atoi(optarg);
+        cout<<"access range "<< access_range <<endl;
+        ALWAYS_ASSERT(access_range > 0);
         break;
 
         case 't':
@@ -510,6 +634,19 @@ microbench_do_test(abstract_db *db, int argc, char **argv)
         ALWAYS_ASSERT(txn_length > 0);
         break;
 
+        case 'p':
+        piece_access_recs  = atoi(optarg);    
+        cout<<"piece access recs "<< piece_access_recs<<endl;
+        ALWAYS_ASSERT(piece_access_recs > 0);
+        break;
+
+        case 'u':
+        user_abort_rate  = atoi(optarg);    
+        cout<<"user abort rate "<< user_abort_rate<< "%%" <<endl;
+        ALWAYS_ASSERT(user_abort_rate >= 0);
+        break;
+
+
         default:
           fprintf(stderr, "Wrong Arg %d\n", c);
           exit(1);
@@ -517,18 +654,12 @@ microbench_do_test(abstract_db *db, int argc, char **argv)
      
   }
 
-  if(conflict_rate > 0)
-    access_range = 1 / conflict_rate * nthreads - 1;
-
-  ALWAYS_ASSERT(access_range < records_per_table); 
-
-  fprintf(stderr, "txn length %lu abort rate %f conflict rate %f read rate %f read first %d access_range %lu\n", 
-    txn_length, user_abort_rate, conflict_rate, read_rate, read_first, access_range);
+  fprintf(stderr, "txn length %lu access_range %lu piece_access_recs %d\n", 
+    txn_length,  access_range, piece_access_recs);
 
   micro_bench_runner r(db);
 
   r.run();
 
   print_profile();
-
 }
