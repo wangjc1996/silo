@@ -158,7 +158,8 @@ BENCH_SRCFILES = benchmarks/bdb_wrapper.cc \
 	benchmarks/masstree/kvrandom.cc \
 	benchmarks/queue.cc \
 	benchmarks/tpcc.cc \
-	benchmarks/ycsb.cc
+	benchmarks/ycsb.cc \
+	benchmarks/micro_bench.cc \
 
 ifeq ($(MYSQL_S),1)
 BENCH_CXXFLAGS += -DMYSQL_SHARE_DIR=\"$(MYSQL_SHARE_DIR)\"

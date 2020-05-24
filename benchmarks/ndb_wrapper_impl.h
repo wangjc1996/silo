@@ -42,6 +42,31 @@ struct hint_kv_scan_traits {
   typedef str_arena StringAllocator;
 };
 
+
+//micro traits
+struct hint_micro_traits {
+  static const size_t read_set_expected_size = 256;
+  static const size_t write_set_expected_size = 256;
+  static const size_t absent_set_expected_size = 1;
+  static const bool stable_input_memory = true;
+  static const bool hard_expected_sizes = false;
+  static const bool read_own_writes = false;
+  typedef str_arena StringAllocator;
+};
+
+
+//micro loader traits
+struct hint_micro_loader_traits {
+  static const size_t read_set_expected_size = 1000;
+  static const size_t write_set_expected_size = 1000;
+  static const size_t absent_set_expected_size = 1000;
+  static const bool stable_input_memory = true;
+  static const bool hard_expected_sizes = true;
+  static const bool read_own_writes = false;
+  static const size_t dep_queue_expected_size = 1000;
+  typedef str_arena StringAllocator;
+};
+
 // tpcc profiles
 
 struct hint_read_only_traits {
@@ -119,7 +144,9 @@ struct hint_tpcc_stock_level_read_only_traits : public hint_read_only_traits {};
   x(abstract_db::HINT_TPCC_ORDER_STATUS, hint_tpcc_order_status_traits) \
   x(abstract_db::HINT_TPCC_ORDER_STATUS_READ_ONLY, hint_tpcc_order_status_read_only_traits) \
   x(abstract_db::HINT_TPCC_STOCK_LEVEL, hint_tpcc_stock_level_traits) \
-  x(abstract_db::HINT_TPCC_STOCK_LEVEL_READ_ONLY, hint_tpcc_stock_level_read_only_traits)
+  x(abstract_db::HINT_TPCC_STOCK_LEVEL_READ_ONLY, hint_tpcc_stock_level_read_only_traits) \
+  x(abstract_db::HINT_MICRO, hint_micro_traits) \
+  x(abstract_db::HINT_MICRO_LOADER, hint_micro_loader_traits) 
 
 template <template <typename> class Transaction>
 ndb_wrapper<Transaction>::ndb_wrapper(
