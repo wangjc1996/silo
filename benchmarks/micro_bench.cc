@@ -358,6 +358,8 @@ public:
                   const test::key k(keys[j]);
 
                   uint64_t get_beg = 0; 
+                  if(profile) 
+                    get_beg = rdtsc();
 
                   ALWAYS_ASSERT(tbl->get(txn, Encode(obj_key0, k), obj_v));
                   
@@ -390,6 +392,9 @@ public:
           }
 
         uint64_t end_txn_beg = 0;
+        if(profile) {
+          end_txn_beg = rdtsc();
+        }
 
         //fprintf(stderr, "%ld, %ld, %ld\n", oldv, newv, coreid::core_id());
         res = db->commit_txn(txn);
