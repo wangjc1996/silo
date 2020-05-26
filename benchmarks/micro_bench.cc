@@ -171,7 +171,7 @@ bind_thread(uint worker_id)
 
 }
 
-
+int last_insert_key[5] = {0};
 
 class micro_worker : public bench_worker {
 public:
@@ -329,8 +329,32 @@ public:
       pdata[pidx].txnstarttime += rdtsc() - start_txn_beg;
 
     try {
+          std::vector<int> keys;
+          for(size_t i = 0; i < 5; i++) {
 
-          for(size_t i = 0; i < txn_length; i++) {
+              int base = generate_key(i + 10) + last_insert_key[i];
+
+              keys.push_back(base);
+
+              for(int j = 1; j < piece_access_recs; j++) {
+
+                  keys.push_back(RandomNumber(r, (i + 10) * records_per_table, (i + 11) * records_per_table - 1));
+
+              }
+
+              std::sort(keys.begin(), keys.end());
+
+              for(int j = 0; j < piece_access_recs; j++) {
+
+                  const test::key k(keys[j]);
+                  const test::value v(0, "TEST");
+                  tbl->insert(txn, Encode(str(), k), Encode(obj_v, v));
+              
+              }
+
+          }
+
+          for(size_t i = 5; i < txn_length; i++) {
 
               int base = generate_key(i);
 
@@ -399,6 +423,11 @@ public:
         //fprintf(stderr, "%ld, %ld, %ld\n", oldv, newv, coreid::core_id());
         res = db->commit_txn(txn);
         //ALWAYS_ASSERT(res);
+        if(res){
+          for(size_t i = 0; i < 5; i++) {
+            last_insert_key[i] = keys[i] - (i + 10) * records_per_table;
+          }
+        }
 
         if(profile){
           pdata[pidx].txncommittime += rdtsc() - end_txn_beg ;
