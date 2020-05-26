@@ -33,7 +33,7 @@ using namespace util;
 
 #define PINCPU
 #define MAXCPU 64
-#define GUASSIAN_DIST
+// #define GUASSIAN_DIST
 
 #define TEST_TABLE_LIST(x) \
   x(test) 
@@ -171,7 +171,7 @@ bind_thread(uint worker_id)
 
 }
 
-int last_insert_key[5] = {0, 0, 0, 0, 0};
+int last_insert_key[5] = {0};
 
 class micro_worker : public bench_worker {
 public:
