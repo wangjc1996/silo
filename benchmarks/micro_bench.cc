@@ -426,7 +426,7 @@ public:
         //ALWAYS_ASSERT(res);
         if(res){
           for(size_t i = 0; i < 5; i++) {
-            last_insert_key[i] = keys_contention[i] - (i + 10) * records_per_table;
+            last_insert_key[i] = (keys_contention[i] - (i + 10) * records_per_table) % records_per_table;
             // printf("%d, %d, %d\n", i, last_insert_key[i], keys_contention[i]);
           }
         }
