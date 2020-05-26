@@ -171,7 +171,7 @@ bind_thread(uint worker_id)
 
 }
 
-int last_insert_key[5] = {0};
+int last_insert_key[5] = {0, 0, 0, 0, 0};
 
 class micro_worker : public bench_worker {
 public:
@@ -329,12 +329,13 @@ public:
       pdata[pidx].txnstarttime += rdtsc() - start_txn_beg;
 
     try {
-          std::vector<int> keys;
+          std::vector<int> keys_contention;
           for(size_t i = 0; i < 5; i++) {
 
-              int base = generate_key(i + 10) + last_insert_key[i];
-
+              int base = generate_key(i + 10) + 1 + last_insert_key[i];
+              std::vector<int> keys;
               keys.push_back(base);
+              keys_contention.push_back(base);
 
               for(int j = 1; j < piece_access_recs; j++) {
 
@@ -425,7 +426,8 @@ public:
         //ALWAYS_ASSERT(res);
         if(res){
           for(size_t i = 0; i < 5; i++) {
-            last_insert_key[i] = keys[i] - (i + 10) * records_per_table;
+            last_insert_key[i] = keys_contention[i] - (i + 10) * records_per_table;
+            // printf("%d, %d, %d\n", i, last_insert_key[i], keys_contention[i]);
           }
         }
 
