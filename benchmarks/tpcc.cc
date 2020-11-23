@@ -1411,11 +1411,11 @@ tpcc_worker::txn_new_order()
 
     measure_txn_counters(txn, "txn_new_order");
     if (likely(db->commit_txn(txn)))
-      return txn_result(true, ret);
+      return txn_result(true, 1);
   } catch (abstract_db::abstract_abort_exception &ex) {
     db->abort_txn(txn);
   }
-  return txn_result(false, 0);
+  return txn_result(false, 1);
 }
 
 class new_order_scan_callback : public abstract_ordered_index::scan_callback {
@@ -1498,7 +1498,7 @@ tpcc_worker::txn_delivery()
         // we will read the oorder entry: in this case the txn will abort,
         // but we're simply bailing out early
         db->abort_txn(txn);
-        return txn_result(false, 0);
+        return txn_result(false, 3);
       }
       oorder::value v_oo_temp;
       const oorder::value *v_oo = Decode(obj_v, v_oo_temp);
@@ -1552,11 +1552,11 @@ tpcc_worker::txn_delivery()
     }
     measure_txn_counters(txn, "txn_delivery");
     if (likely(db->commit_txn(txn)))
-      return txn_result(true, ret);
+      return txn_result(true, 3);
   } catch (abstract_db::abstract_abort_exception &ex) {
     db->abort_txn(txn);
   }
-  return txn_result(false, 0);
+  return txn_result(false, 3);
 }
 
 static event_avg_counter evt_avg_cust_name_idx_scan_size("avg_cust_name_idx_scan_size");
@@ -1713,11 +1713,11 @@ tpcc_worker::txn_payment()
 
     measure_txn_counters(txn, "txn_payment");
     if (likely(db->commit_txn(txn)))
-      return txn_result(true, ret);
+      return txn_result(true, 2);
   } catch (abstract_db::abstract_abort_exception &ex) {
     db->abort_txn(txn);
   }
-  return txn_result(false, 0);
+  return txn_result(false, 2);
 }
 
 class order_line_nop_callback : public abstract_ordered_index::scan_callback {
@@ -1859,11 +1859,11 @@ tpcc_worker::txn_order_status()
 
     measure_txn_counters(txn, "txn_order_status");
     if (likely(db->commit_txn(txn)))
-      return txn_result(true, 0);
+      return txn_result(true, 4);
   } catch (abstract_db::abstract_abort_exception &ex) {
     db->abort_txn(txn);
   }
-  return txn_result(false, 0);
+  return txn_result(false, 4);
 }
 
 class order_line_scan_callback : public abstract_ordered_index::scan_callback {
@@ -1968,11 +1968,11 @@ tpcc_worker::txn_stock_level()
     }
     measure_txn_counters(txn, "txn_stock_level");
     if (likely(db->commit_txn(txn)))
-      return txn_result(true, 0);
+      return txn_result(true, 5);
   } catch (abstract_db::abstract_abort_exception &ex) {
     db->abort_txn(txn);
   }
-  return txn_result(false, 0);
+  return txn_result(false, 5);
 }
 
 template <typename T>

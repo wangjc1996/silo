@@ -113,13 +113,29 @@ public:
       r(seed), db(db), open_tables(open_tables),
       barrier_a(barrier_a), barrier_b(barrier_b),
       // the ntxn_* numbers are per worker
-      ntxn_commits(0), ntxn_aborts(0),
+      ntxn_commits(0),
+      ntxn_commits_new_order(0), 
+      ntxn_commits_payment(0), 
+      ntxn_commits_delivery(0), 
+      ntxn_commits_order_status(0), 
+      ntxn_commits_stock_level(0), 
+      ntxn_aborts(0),
+      ntxn_aborts_new_order(0),
+      ntxn_aborts_payment(0),
+      ntxn_aborts_delivery(0),
+      ntxn_aborts_order_status(0),
+      ntxn_aborts_stock_level(0),
       latency_numer_us(0),
       backoff_shifts(0), // spin between [0, 2^backoff_shifts) times before retry
       size_delta(0)
   {
     txn_obj_buf.reserve(str_arena::MinStrReserveLength);
     txn_obj_buf.resize(db->sizeof_txn_object(txn_flags));
+    tail_latency1.reserve(1 << 12);
+    tail_latency2.reserve(1 << 12);
+    tail_latency3.reserve(1 << 12);
+    tail_latency4.reserve(1 << 12);
+    tail_latency5.reserve(1 << 12);
   }
 
   virtual ~bench_worker() {}
@@ -146,9 +162,25 @@ public:
   virtual void run();
 
   inline size_t get_ntxn_commits() const { return ntxn_commits; }
+  inline size_t get_ntxn_commits_new_order() const { return ntxn_commits_new_order; }
+  inline size_t get_ntxn_commits_payment() const { return ntxn_commits_payment; }
+  inline size_t get_ntxn_commits_delivery() const { return ntxn_commits_delivery; }
+  inline size_t get_ntxn_commits_order_status() const { return ntxn_commits_order_status; }
+  inline size_t get_ntxn_commits_stock_level() const { return ntxn_commits_stock_level; }
+
   inline size_t get_ntxn_aborts() const { return ntxn_aborts; }
+  inline size_t get_ntxn_aborts_new_order() const { return ntxn_aborts_new_order; }
+  inline size_t get_ntxn_aborts_payment() const { return ntxn_aborts_payment; }
+  inline size_t get_ntxn_aborts_delivery() const { return ntxn_aborts_delivery; }
+  inline size_t get_ntxn_aborts_order_status() const { return ntxn_aborts_order_status; }
+  inline size_t get_ntxn_aborts_stock_level() const { return ntxn_aborts_stock_level; }
 
   inline uint64_t get_latency_numer_us() const { return latency_numer_us; }
+  inline std::vector<uint64_t> get_tail_latency1() const { return tail_latency1; }
+  inline std::vector<uint64_t> get_tail_latency2() const { return tail_latency2; }
+  inline std::vector<uint64_t> get_tail_latency3() const { return tail_latency3; }
+  inline std::vector<uint64_t> get_tail_latency4() const { return tail_latency4; }
+  inline std::vector<uint64_t> get_tail_latency5() const { return tail_latency5; }
 
   inline double
   get_avg_latency_us() const
@@ -187,8 +219,23 @@ protected:
 
 private:
   size_t ntxn_commits;
+  size_t ntxn_commits_new_order;
+  size_t ntxn_commits_payment;
+  size_t ntxn_commits_delivery;
+  size_t ntxn_commits_order_status;
+  size_t ntxn_commits_stock_level;
   size_t ntxn_aborts;
+  size_t ntxn_aborts_new_order;
+  size_t ntxn_aborts_payment;
+  size_t ntxn_aborts_delivery;
+  size_t ntxn_aborts_order_status;
+  size_t ntxn_aborts_stock_level;
   uint64_t latency_numer_us;
+  std::vector<uint64_t> tail_latency1;
+  std::vector<uint64_t> tail_latency2;
+  std::vector<uint64_t> tail_latency3;
+  std::vector<uint64_t> tail_latency4;
+  std::vector<uint64_t> tail_latency5;
   unsigned backoff_shifts;
 
 protected:
