@@ -330,32 +330,32 @@ public:
 
     try {
           std::vector<int> keys_contention;
-          for(size_t i = 0; i < 5; i++) {
+          // for(size_t i = 0; i < 5; i++) {
 
-              int base = generate_key(i + 10) + 1 + last_insert_key[i];
-              std::vector<int> keys;
-              keys.push_back(base);
-              keys_contention.push_back(base);
+          //     int base = generate_key(i + 10) + 1 + last_insert_key[i];
+          //     std::vector<int> keys;
+          //     keys.push_back(base);
+          //     keys_contention.push_back(base);
 
-              for(int j = 1; j < piece_access_recs; j++) {
+          //     for(int j = 1; j < piece_access_recs; j++) {
 
-                  keys.push_back(RandomNumber(r, (i + 10) * records_per_table, (i + 11) * records_per_table - 1));
+          //         keys.push_back(RandomNumber(r, (i + 10) * records_per_table, (i + 11) * records_per_table - 1));
 
-              }
+          //     }
 
-              std::sort(keys.begin(), keys.end());
+          //     std::sort(keys.begin(), keys.end());
 
-              for(int j = 0; j < piece_access_recs; j++) {
+          //     for(int j = 0; j < piece_access_recs; j++) {
 
-                  const test::key k(keys[j]);
-                  const test::value v(0, "TEST");
-                  tbl->insert(txn, Encode(str(), k), Encode(obj_v, v));
+          //         const test::key k(keys[j]);
+          //         const test::value v(0, "TEST");
+          //         tbl->insert(txn, Encode(str(), k), Encode(obj_v, v));
               
-              }
+          //     }
 
-          }
+          // }
 
-          for(size_t i = 5; i < txn_length; i++) {
+          for(size_t i = 0; i < txn_length; i++) {
 
               int base = generate_key(i);
 
@@ -424,12 +424,12 @@ public:
         //fprintf(stderr, "%ld, %ld, %ld\n", oldv, newv, coreid::core_id());
         res = db->commit_txn(txn);
         //ALWAYS_ASSERT(res);
-        if(res){
-          for(size_t i = 0; i < 5; i++) {
-            last_insert_key[i] = (keys_contention[i] - (i + 10) * records_per_table) % records_per_table;
-            // printf("%d, %d, %d\n", i, last_insert_key[i], keys_contention[i]);
-          }
-        }
+        // if(res){
+        //   for(size_t i = 0; i < 5; i++) {
+        //     last_insert_key[i] = (keys_contention[i] - (i + 10) * records_per_table) % records_per_table;
+        //     // printf("%d, %d, %d\n", i, last_insert_key[i], keys_contention[i]);
+        //   }
+        // }
 
         if(profile){
           pdata[pidx].txncommittime += rdtsc() - end_txn_beg ;
