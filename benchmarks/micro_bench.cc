@@ -330,6 +330,7 @@ public:
 
     try {
           std::vector<int> keys_contention;
+          int high_contention_pieces = 2;
           // for(size_t i = 0; i < 5; i++) {
 
           //     int base = generate_key(i + 10) + 1 + last_insert_key[i];
@@ -355,7 +356,7 @@ public:
 
           // }
 
-          for(size_t i = 0; i < txn_length; i++) {
+          for(size_t i = 0; i < high_contention_pieces; i++) {
 
               int base = generate_key(i);
 
@@ -364,7 +365,68 @@ public:
 
               for(int j = 1; j < piece_access_recs; j++) {
 
-                  keys.push_back(RandomNumber(r, i * records_per_table, (i + 1) * records_per_table - 1));
+                  keys.push_back(RandomNumber(r, i * records_per_table + access_range, (i + 1) * records_per_table - 1));
+
+              }
+
+              std::sort(keys.begin(), keys.end());
+
+
+              uint64_t start_piece_beg = 0;
+              if(profile)
+                start_piece_beg = rdtsc();
+
+              for(int j = 0; j < piece_access_recs; j++) {
+                  
+                  
+                  // printf("W[%d] P[%lu] r[%d] rec[%d]\n", worker_id, i, j, keys[j]);
+
+                  const test::key k(keys[j]);
+
+                  uint64_t get_beg = 0; 
+                  if(profile) 
+                    get_beg = rdtsc();
+
+                  ALWAYS_ASSERT(tbl->get(txn, Encode(obj_key0, k), obj_v));
+                  
+                  if(profile)
+                    pdata[pidx].gettime += rdtsc() - get_beg;
+                
+                  test::value temp; 
+                  const test::value *v = Decode(obj_v, temp);
+      
+                  test::value v_new(*v);
+                  v_new.t_v_count++;   
+                  ALWAYS_ASSERT(v_new.t_v_count > 0);
+
+                  uint64_t put_beg = 0;
+
+                  if(profile) 
+                    put_beg = rdtsc();
+                
+                  tbl->put(txn, Encode(str(), k), Encode(obj_v, v_new));
+
+                  if(profile) 
+                    pdata[pidx].puttime += rdtsc() - put_beg ;
+              
+              }
+
+              uint64_t end_piece_beg = 0;
+              if(profile)
+                end_piece_beg = rdtsc();
+
+          }
+
+          for(size_t i = high_contention_pieces; i < txn_length; i++) {
+
+              int base = generate_key(i);
+
+              std::vector<int> keys;
+              // keys.push_back(base);
+
+              for(int j = 0; j < piece_access_recs; j++) {
+
+                  keys.push_back(RandomNumber(r, i * records_per_table + access_range, (i + 1) * records_per_table - 1));
 
               }
 
