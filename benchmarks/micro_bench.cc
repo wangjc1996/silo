@@ -59,6 +59,7 @@ static int piece_access_recs = 1;
 
 static unsigned g_txn_workload_mix[] = {100};
 
+static double g_zipf_theta = 1;
 
 enum  MICRO_TYPES
 {
@@ -187,6 +188,65 @@ public:
       pidx(0)
   {
     computation_n = RandomNumber(r, 0, 1000000);
+    
+    // initialization
+    c = 0;
+    alpha = g_zipf_theta;
+    n = access_range - 1;
+
+    // Compute normalization constant on first call only
+    for (int i=1; i<=n; i++)
+    c = c + (1.0 / pow((double) i, alpha));
+    c = 1.0 / c;
+
+    sum_probs = (double *) malloc((n+1)*sizeof(*sum_probs));
+    sum_probs[0] = 0;
+    for (int i=1; i<=n; i++) {
+      sum_probs[i] = sum_probs[i-1] + c / pow((double) i, alpha);
+    }
+  }
+
+  double alpha;
+  int n;
+  double c;             // Normalization constant
+  double *sum_probs;    // Pre-calculated sum of probabilities
+
+  int ZipfInt(fast_random &r)
+  {
+    double z;                     // Uniform random number (0 < z < 1)
+    int zipf_value;               // Computed exponential value to be returned
+    int i;                        // Loop counter
+    int low, high, mid;           // Binary-search bounds
+
+    // Pull a uniform random number (0 < z < 1)
+    do
+    {
+        z = r.next_uniform();
+    }
+    while ((z == 0) || (z == 1));
+
+    // Map z to the value
+    low = 1, high = n, mid;
+    do {
+        mid = floor((low+high)/2);
+        if (sum_probs[mid] >= z && sum_probs[mid-1] < z) {
+            zipf_value = mid;
+            break;
+        } else if (sum_probs[mid] >= z) {
+            high = mid-1;
+        } else {
+            low = mid+1;
+        }
+    } while (low <= high);
+
+    // Assert that zipf_value is between 1 and N
+    assert((zipf_value >=1) && (zipf_value <= n));
+
+    return(zipf_value);
+  }
+
+  util::fast_random &getR(){
+    return r;
   }
 
   txn_result
@@ -552,11 +612,12 @@ protected:
   generate_key(unsigned int table_id)
   {
 
-#ifdef GUASSIAN_DIST
-    int offset = (int)ceil(distribution(generator) + worker_id) % access_range;//RandomNumber(r, 0, access_range - 1);
-#else  
-    int offset = RandomNumber(r, 0, access_range - 1);
-#endif    
+// #ifdef GUASSIAN_DIST
+//     int offset = (int)ceil(distribution(generator) + worker_id) % access_range;//RandomNumber(r, 0, access_range - 1);
+// #else  
+//     int offset = RandomNumber(r, 0, access_range - 1);
+// #endif    
+    int offset = ZipfInt(getR());
     return offset + table_id * records_per_table;  
   }
 
@@ -704,9 +765,10 @@ microbench_do_test(abstract_db *db, int argc, char **argv)
       {"txn-length"    , required_argument , 0, 't'},
       {"user-initial-abort"    , required_argument , 0, 'u'},
       {"piece-access-recs"    , required_argument , 0, 'p'},
+      {"zipf-theta"           , required_argument , 0, 'z'} ,
     };
     int option_index = 0;
-    int c = getopt_long(argc, argv, "a:t:p:u", long_options, &option_index);
+    int c = getopt_long(argc, argv, "a:z:t:p:u", long_options, &option_index);
     if (c == -1)
       break;
 
@@ -744,6 +806,11 @@ microbench_do_test(abstract_db *db, int argc, char **argv)
         ALWAYS_ASSERT(user_abort_rate >= 0);
         break;
 
+        case 'z':
+        g_zipf_theta = atof(optarg);
+        cout<<"g_zipf_theta "<< g_zipf_theta <<endl;
+        ALWAYS_ASSERT(g_zipf_theta >= 0);
+        break;
 
         default:
           fprintf(stderr, "Wrong Arg %d\n", c);
