@@ -390,7 +390,7 @@ public:
 
     try {
           std::vector<int> keys_contention;
-          int high_contention_pieces = 2;
+          int high_contention_pieces = 1;
           // for(size_t i = 0; i < 5; i++) {
 
           //     int base = generate_key(i + 10) + 1 + last_insert_key[i];
