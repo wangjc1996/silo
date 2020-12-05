@@ -39,7 +39,7 @@ using namespace util;
   x(test) 
 
 
-static const size_t TXTTPES = 1;
+static const size_t TXTTPES = 10;
 
 
 
@@ -63,7 +63,16 @@ static double g_zipf_theta = 1;
 
 enum  MICRO_TYPES
 {
-  MICROBENCH = 1,
+  MICROBENCH_1 = 1,
+  MICROBENCH_2 = 2,
+  MICROBENCH_3 = 3,
+  MICROBENCH_4 = 4,
+  MICROBENCH_5 = 5,
+  MICROBENCH_6 = 6,
+  MICROBENCH_7 = 7,
+  MICROBENCH_8 = 8,
+  MICROBENCH_9 = 9,
+  MICROBENCH_10 = 10,
 };
 
 #define PROFILE
@@ -356,7 +365,7 @@ public:
   }
 
   txn_result
-  txn_mul_micro()
+  txn_mul_micro(MICRO_TYPES type)
   {
 
 
@@ -568,15 +577,63 @@ public:
   }
 
   static txn_result
-  TxnMicro(bench_worker *w)
+  TxnMicro_1(bench_worker *w)
   {
-    return static_cast<micro_worker *>(w)->txn_micro();
+    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_1);
   }
 
   static txn_result
-  TxnMultipleMicro(bench_worker *w)
+  TxnMicro_2(bench_worker *w)
   {
-    return static_cast<micro_worker *>(w)->txn_mul_micro();
+    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_2);
+  }
+
+  static txn_result
+  TxnMicro_3(bench_worker *w)
+  {
+    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_3);
+  }
+
+  static txn_result
+  TxnMicro_4(bench_worker *w)
+  {
+    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_4);
+  }
+
+  static txn_result
+  TxnMicro_5(bench_worker *w)
+  {
+    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_5);
+  }
+
+  static txn_result
+  TxnMicro_6(bench_worker *w)
+  {
+    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_6);
+  }
+
+  static txn_result
+  TxnMicro_7(bench_worker *w)
+  {
+    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_7);
+  }
+
+  static txn_result
+  TxnMicro_8(bench_worker *w)
+  {
+    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_8);
+  }
+
+  static txn_result
+  TxnMicro_9(bench_worker *w)
+  {
+    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_9);
+  }
+
+  static txn_result
+  TxnMicro_10(bench_worker *w)
+  {
+    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_10);
   }
 
   virtual workload_desc_vec
@@ -588,8 +645,22 @@ public:
     for (size_t i = 0; i < ARRAY_NELEMS(g_txn_workload_mix); i++)
       m += g_txn_workload_mix[i];
     ALWAYS_ASSERT(m == 100);
-    if (g_txn_workload_mix[0])
-      w.push_back(workload_desc("Micro bench",  double(g_txn_workload_mix[0])/100.0, TxnMultipleMicro));
+    // if (g_txn_workload_mix[0])
+    //   w.push_back(workload_desc("Micro bench",  double(g_txn_workload_mix[0])/100.0, TxnMultipleMicro));
+    
+    // all 10 txn type has same possibility
+    if (g_txn_workload_mix[0]) {
+      w.push_back(workload_desc("Micro_bench_1",  double(0.1), TxnMicro_1));
+      w.push_back(workload_desc("Micro_bench_2",  double(0.1), TxnMicro_2));
+      w.push_back(workload_desc("Micro_bench_3",  double(0.1), TxnMicro_3));
+      w.push_back(workload_desc("Micro_bench_4",  double(0.1), TxnMicro_4));
+      w.push_back(workload_desc("Micro_bench_5",  double(0.1), TxnMicro_5));
+      w.push_back(workload_desc("Micro_bench_6",  double(0.1), TxnMicro_6));
+      w.push_back(workload_desc("Micro_bench_7",  double(0.1), TxnMicro_7));
+      w.push_back(workload_desc("Micro_bench_8",  double(0.1), TxnMicro_8));
+      w.push_back(workload_desc("Micro_bench_9",  double(0.1), TxnMicro_9));
+      w.push_back(workload_desc("Micro_bench_10",  double(0.1), TxnMicro_10));
+    }
     
     return w;
   }
