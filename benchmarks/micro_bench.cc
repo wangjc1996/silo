@@ -547,6 +547,21 @@ public:
 
           }
 
+          {
+            int final_acc_key = RandomNumber(r, (txn_length + type - 1) * records_per_table, (txn_length + type) * records_per_table - 1);
+            const test::key k(final_acc_key);
+
+            ALWAYS_ASSERT(tbl->get(txn, Encode(obj_key0, k), obj_v));
+            test::value temp; 
+            const test::value *v = Decode(obj_v, temp);
+
+            test::value v_new(*v);
+            v_new.t_v_count++;   
+            ALWAYS_ASSERT(v_new.t_v_count > 0);
+
+            tbl->put(txn, Encode(str(), k), Encode(obj_v, v_new));
+          }
+
         uint64_t end_txn_beg = 0;
         if(profile) {
           end_txn_beg = rdtsc();
@@ -769,7 +784,7 @@ public:
   micro_bench_runner(abstract_db *db)
     : bench_runner(db)
   {
-    open_tables["TESTTABLE"] = db->open_index("TESTTABLE", (txn_length * records_per_table));
+    open_tables["TESTTABLE"] = db->open_index("TESTTABLE", (20 * records_per_table));
   }
 
 protected:
@@ -778,7 +793,7 @@ protected:
   {
     vector<bench_loader *> ret;
 
-    uint64_t total = txn_length * records_per_table;
+    uint64_t total = 20 * records_per_table;
     if(enable_parallel_loading) {
 
       const unsigned alignment = coreid::num_cpus_online();
