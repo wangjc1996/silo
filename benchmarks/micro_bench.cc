@@ -486,7 +486,7 @@ public:
 
           }
 
-          for(size_t i = high_contention_pieces; i < txn_length; i++) {
+          for(size_t i = high_contention_pieces; i < 4; i++) {
 
               int base = generate_key(i);
 
