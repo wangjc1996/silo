@@ -486,14 +486,14 @@ public:
 
           }
 
-          for(size_t i = high_contention_pieces; i < 4; i++) {
+          for(size_t i = high_contention_pieces; i < 2; i++) {
 
               int base = generate_key(i);
 
               std::vector<int> keys;
               // keys.push_back(base);
 
-              for(int j = 0; j < piece_access_recs; j++) {
+              for(int j = 0; j < piece_access_recs * 6; j++) {
 
                   keys.push_back(RandomNumber(r, i * records_per_table + access_range, (i + 1) * records_per_table - 1));
 
@@ -506,7 +506,7 @@ public:
               if(profile)
                 start_piece_beg = rdtsc();
 
-              for(int j = 0; j < piece_access_recs; j++) {
+              for(int j = 0; j < piece_access_recs * 6; j++) {
                   
                   
                   // printf("W[%d] P[%lu] r[%d] rec[%d]\n", worker_id, i, j, keys[j]);
