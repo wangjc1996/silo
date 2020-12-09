@@ -43,7 +43,7 @@ static const size_t TXTTPES = 10;
 
 
 
-static const int64_t records_per_table = 1024*1024;
+static const int64_t records_per_table = 1024*1024*10;
 
 
 static bool profile = false;
@@ -548,7 +548,7 @@ public:
           }
 
           {
-            int final_acc_key = RandomNumber(r, (txn_length + type - 1) * records_per_table, (txn_length + type) * records_per_table - 1);
+            int final_acc_key = RandomNumber(r, (2 + type - 1) * records_per_table, (2 + type) * records_per_table - 1);
             const test::key k(final_acc_key);
 
             ALWAYS_ASSERT(tbl->get(txn, Encode(obj_key0, k), obj_v));
@@ -784,7 +784,7 @@ public:
   micro_bench_runner(abstract_db *db)
     : bench_runner(db)
   {
-    open_tables["TESTTABLE"] = db->open_index("TESTTABLE", (20 * records_per_table));
+    open_tables["TESTTABLE"] = db->open_index("TESTTABLE", (12 * records_per_table));
   }
 
 protected:
@@ -793,7 +793,7 @@ protected:
   {
     vector<bench_loader *> ret;
 
-    uint64_t total = 20 * records_per_table;
+    uint64_t total = 12 * records_per_table;
     if(enable_parallel_loading) {
 
       const unsigned alignment = coreid::num_cpus_online();
