@@ -39,11 +39,11 @@ using namespace util;
   x(test) 
 
 
-static const size_t TXTTPES = 10;
+static const size_t TXTTPES = 1;
 
 
 
-static const int64_t records_per_table = 1024*1024*10;
+static const int64_t records_per_table = 1024*1024;
 
 
 static bool profile = false;
@@ -60,6 +60,7 @@ static int piece_access_recs = 1;
 static unsigned g_txn_workload_mix[] = {100};
 
 static double g_zipf_theta = 1;
+volatile uint64_t insert_key = records_per_table + 1;
 
 enum  MICRO_TYPES
 {
@@ -386,80 +387,28 @@ public:
 
     bool res = false;
 
-
-    uint64_t start_txn_beg = 0;
-    if(profile)
-      start_txn_beg = rdtsc();
-
     scoped_str_arena s_arena(arena);
     void * const txn = db->new_txn(txn_flags, arena, txn_buf(), abstract_db::HINT_MICRO);
 
-    if(profile)
-      pdata[pidx].txnstarttime += rdtsc() - start_txn_beg;
-
     try {
           std::vector<int> keys_contention;
-          int high_contention_pieces = 1;
-          // for(size_t i = 0; i < 5; i++) {
+          int insert_pieces = 1;
 
-          //     int base = generate_key(i + 10) + 1 + last_insert_key[i];
-          //     std::vector<int> keys;
-          //     keys.push_back(base);
-          //     keys_contention.push_back(base);
-
-          //     for(int j = 1; j < piece_access_recs; j++) {
-
-          //         keys.push_back(RandomNumber(r, (i + 10) * records_per_table, (i + 11) * records_per_table - 1));
-
-          //     }
-
-          //     std::sort(keys.begin(), keys.end());
-
-          //     for(int j = 0; j < piece_access_recs; j++) {
-
-          //         const test::key k(keys[j]);
-          //         const test::value v(0, "TEST");
-          //         tbl->insert(txn, Encode(str(), k), Encode(obj_v, v));
-              
-          //     }
-
-          // }
-
-          for(size_t i = 0; i < high_contention_pieces; i++) {
-
-              int base = generate_key(i);
+          for(size_t i = insert_pieces; i < 2; i++) {
 
               std::vector<int> keys;
-              keys.push_back(base);
 
-              for(int j = 1; j < piece_access_recs; j++) {
+              for(int j = 0; j < piece_access_recs * 6; j++) {
 
-                  keys.push_back(RandomNumber(r, i * records_per_table + access_range, (i + 1) * records_per_table - 1));
-
+                  keys.push_back(RandomNumber(r, 0, records_per_table - 1));
               }
 
               std::sort(keys.begin(), keys.end());
 
-
-              uint64_t start_piece_beg = 0;
-              if(profile)
-                start_piece_beg = rdtsc();
-
-              for(int j = 0; j < piece_access_recs; j++) {
+              for(int j = 0; j < piece_access_recs * 6; j++) {
                   
-                  
-                  // printf("W[%d] P[%lu] r[%d] rec[%d]\n", worker_id, i, j, keys[j]);
-
                   const test::key k(keys[j]);
-
-                  uint64_t get_beg = 0; 
-                  if(profile) 
-                    get_beg = rdtsc();
-
                   ALWAYS_ASSERT(tbl->get(txn, Encode(obj_key0, k), obj_v));
-                  
-                  if(profile)
-                    pdata[pidx].gettime += rdtsc() - get_beg;
                 
                   test::value temp; 
                   const test::value *v = Decode(obj_v, temp);
@@ -467,105 +416,30 @@ public:
                   test::value v_new(*v);
                   v_new.t_v_count++;   
                   ALWAYS_ASSERT(v_new.t_v_count > 0);
-
-                  uint64_t put_beg = 0;
-
-                  if(profile) 
-                    put_beg = rdtsc();
                 
                   tbl->put(txn, Encode(str(), k), Encode(obj_v, v_new));
-
-                  if(profile) 
-                    pdata[pidx].puttime += rdtsc() - put_beg ;
               
               }
 
-              uint64_t end_piece_beg = 0;
-              if(profile)
-                end_piece_beg = rdtsc();
-
           }
 
-          for(size_t i = high_contention_pieces; i < 2; i++) {
+          for(size_t i = 0; i < insert_pieces; i++) {
+            std::vector<int> keys;
 
-              int base = generate_key(i);
-
-              std::vector<int> keys;
-              // keys.push_back(base);
-
-              for(int j = 0; j < piece_access_recs * 6; j++) {
-
-                  keys.push_back(RandomNumber(r, i * records_per_table + access_range, (i + 1) * records_per_table - 1));
-
-              }
-
-              std::sort(keys.begin(), keys.end());
+            for(int j = 0; j < piece_access_recs; j++) {
+              keys.push_back(RandomNumber(r, insert_key, insert_key + 10000));
+            }
+            std::sort(keys.begin(), keys.end());
+            insert_key += 100;
 
 
-              uint64_t start_piece_beg = 0;
-              if(profile)
-                start_piece_beg = rdtsc();
-
-              for(int j = 0; j < piece_access_recs * 6; j++) {
-                  
-                  
-                  // printf("W[%d] P[%lu] r[%d] rec[%d]\n", worker_id, i, j, keys[j]);
-
-                  const test::key k(keys[j]);
-
-                  uint64_t get_beg = 0; 
-                  if(profile) 
-                    get_beg = rdtsc();
-
-                  ALWAYS_ASSERT(tbl->get(txn, Encode(obj_key0, k), obj_v));
-                  
-                  if(profile)
-                    pdata[pidx].gettime += rdtsc() - get_beg;
-                
-                  test::value temp; 
-                  const test::value *v = Decode(obj_v, temp);
-      
-                  test::value v_new(*v);
-                  v_new.t_v_count++;   
-                  ALWAYS_ASSERT(v_new.t_v_count > 0);
-
-                  uint64_t put_beg = 0;
-
-                  if(profile) 
-                    put_beg = rdtsc();
-                
-                  tbl->put(txn, Encode(str(), k), Encode(obj_v, v_new));
-
-                  if(profile) 
-                    pdata[pidx].puttime += rdtsc() - put_beg ;
-              
-              }
-
-              uint64_t end_piece_beg = 0;
-              if(profile)
-                end_piece_beg = rdtsc();
-
+            for(int j = 0; j < piece_access_recs; j++) {
+              string obj_buf;
+              const test::key k(keys[j]);
+              const test::value v(0, "TEST");
+              tbl->insert(txn, Encode(k), Encode(obj_buf, v));
+            }
           }
-
-          {
-            int final_acc_key = RandomNumber(r, (2 + type - 1) * records_per_table, (2 + type) * records_per_table - 1);
-            const test::key k(final_acc_key);
-
-            ALWAYS_ASSERT(tbl->get(txn, Encode(obj_key0, k), obj_v));
-            test::value temp; 
-            const test::value *v = Decode(obj_v, temp);
-
-            test::value v_new(*v);
-            v_new.t_v_count++;   
-            ALWAYS_ASSERT(v_new.t_v_count > 0);
-
-            tbl->put(txn, Encode(str(), k), Encode(obj_v, v_new));
-          }
-
-        uint64_t end_txn_beg = 0;
-        if(profile) {
-          end_txn_beg = rdtsc();
-        }
 
         //fprintf(stderr, "%ld, %ld, %ld\n", oldv, newv, coreid::core_id());
         res = db->commit_txn(txn);
@@ -576,11 +450,6 @@ public:
         //     // printf("%d, %d, %d\n", i, last_insert_key[i], keys_contention[i]);
         //   }
         // }
-
-        if(profile){
-          pdata[pidx].txncommittime += rdtsc() - end_txn_beg ;
-          pdata[pidx].succ++;
-        }
 
 
       } catch (abstract_db::abstract_abort_exception &ex) {
@@ -595,60 +464,6 @@ public:
   TxnMicro_1(bench_worker *w)
   {
     return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_1);
-  }
-
-  static txn_result
-  TxnMicro_2(bench_worker *w)
-  {
-    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_2);
-  }
-
-  static txn_result
-  TxnMicro_3(bench_worker *w)
-  {
-    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_3);
-  }
-
-  static txn_result
-  TxnMicro_4(bench_worker *w)
-  {
-    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_4);
-  }
-
-  static txn_result
-  TxnMicro_5(bench_worker *w)
-  {
-    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_5);
-  }
-
-  static txn_result
-  TxnMicro_6(bench_worker *w)
-  {
-    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_6);
-  }
-
-  static txn_result
-  TxnMicro_7(bench_worker *w)
-  {
-    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_7);
-  }
-
-  static txn_result
-  TxnMicro_8(bench_worker *w)
-  {
-    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_8);
-  }
-
-  static txn_result
-  TxnMicro_9(bench_worker *w)
-  {
-    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_9);
-  }
-
-  static txn_result
-  TxnMicro_10(bench_worker *w)
-  {
-    return static_cast<micro_worker *>(w)->txn_mul_micro(MICROBENCH_10);
   }
 
   virtual workload_desc_vec
@@ -666,15 +481,6 @@ public:
     // all 10 txn type has same possibility
     if (g_txn_workload_mix[0]) {
       w.push_back(workload_desc("Micro_bench_1",  double(0.1), TxnMicro_1));
-      w.push_back(workload_desc("Micro_bench_2",  double(0.1), TxnMicro_2));
-      w.push_back(workload_desc("Micro_bench_3",  double(0.1), TxnMicro_3));
-      w.push_back(workload_desc("Micro_bench_4",  double(0.1), TxnMicro_4));
-      w.push_back(workload_desc("Micro_bench_5",  double(0.1), TxnMicro_5));
-      w.push_back(workload_desc("Micro_bench_6",  double(0.1), TxnMicro_6));
-      w.push_back(workload_desc("Micro_bench_7",  double(0.1), TxnMicro_7));
-      w.push_back(workload_desc("Micro_bench_8",  double(0.1), TxnMicro_8));
-      w.push_back(workload_desc("Micro_bench_9",  double(0.1), TxnMicro_9));
-      w.push_back(workload_desc("Micro_bench_10",  double(0.1), TxnMicro_10));
     }
     
     return w;
@@ -793,7 +599,7 @@ protected:
   {
     vector<bench_loader *> ret;
 
-    uint64_t total = 12 * records_per_table;
+    uint64_t total = 1 * records_per_table;
     if(enable_parallel_loading) {
 
       const unsigned alignment = coreid::num_cpus_online();
