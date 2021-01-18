@@ -372,6 +372,8 @@ bench_runner::run()
       << "avg_persist_latency_ms(" << avg_persist_latency_ms << "),"
       << "agg_abort_throughput(" << agg_abort_throughput << "),"
       << "agg_abort_rate(" << agg_abort_rate << "),"
+      << "get put cost(" << get_put_cost/(n_commits) << "),"
+      << "insert cost(" << insert_cost/n_commits << "),"
       << "0" <<endl;
   cout.flush();
 

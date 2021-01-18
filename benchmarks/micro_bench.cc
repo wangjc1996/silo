@@ -26,6 +26,7 @@
 #include "micro_bench.h"
 #include "ndb_wrapper.h"
 #include "ndb_wrapper_impl.h"
+#include "global.h"
 
 using namespace std;
 using namespace util;
@@ -39,11 +40,13 @@ using namespace util;
   x(test) 
 
 
+extern uint64_t get_put_cost;
+extern uint64_t insert_cost;
 static const size_t TXTTPES = 1;
 
 
-
-static const int64_t records_per_table = 1024*1024;
+static const int64_t factor = 1;
+static const int64_t records_per_table = 1024*1024*factor;
 
 
 static bool profile = false;
@@ -369,6 +372,10 @@ public:
   txn_mul_micro(MICRO_TYPES type)
   {
 
+    uint64_t get_put_start = 0;
+    uint64_t get_put_end = 0;
+    uint64_t insert_start = 0;
+    uint64_t insert_end = 0;
 
     bool user_abort = (user_abort_rate > 0);
     uint64_t abort_op = txn_length + 1;
@@ -402,6 +409,7 @@ public:
           std::vector<int> keys_contention;
           int insert_pieces = 1;
 
+          get_put_start = rdtsc();
           for(size_t i = insert_pieces; i < 2; i++) {
 
               int base = generate_key(i);
@@ -411,7 +419,7 @@ public:
 
               for(int j = 0; j < piece_access_recs * 6; j++) {
 
-                  keys.push_back(RandomNumber(r, 0, records_per_table - 1));
+                  keys.push_back(RandomNumber(r, 0, records_per_table/factor - 1));
 
               }
 
@@ -462,7 +470,9 @@ public:
                 end_piece_beg = rdtsc();
 
           }
+          get_put_end = rdtsc();
 
+          insert_start = rdtsc();
           for(size_t i = 0; i < insert_pieces; i++) {
 
             std::vector<int> keys;
@@ -481,6 +491,7 @@ public:
               tbl->insert(txn, Encode(k), Encode(obj_buf, v));
             }
           }
+          insert_end = rdtsc();
 
         uint64_t end_txn_beg = 0;
         if(profile) {
@@ -496,6 +507,11 @@ public:
         //     // printf("%d, %d, %d\n", i, last_insert_key[i], keys_contention[i]);
         //   }
         // }
+        if (res)
+        {
+          insert_cost += insert_end - insert_start;
+          get_put_cost += get_put_end - get_put_start;
+        }
 
         if(profile){
           pdata[pidx].txncommittime += rdtsc() - end_txn_beg ;

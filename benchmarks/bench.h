@@ -14,6 +14,7 @@
 #include "../util.h"
 #include "../spinbarrier.h"
 #include "../rcu.h"
+#include "global.h"
 
 extern void ycsb_do_test(abstract_db *db, int argc, char **argv);
 extern void tpcc_do_test(abstract_db *db, int argc, char **argv);
@@ -42,6 +43,9 @@ extern int slow_exit;
 extern int retry_aborted_transaction;
 extern int no_reset_counters;
 extern int backoff_aborted_transaction;
+
+extern uint64_t get_put_cost;
+extern uint64_t insert_cost;
 
 class scoped_db_thread_ctx {
 public:
@@ -117,7 +121,8 @@ public:
       ntxn_commits(0), ntxn_aborts(0),
       latency_numer_us(0),
       backoff_shifts(0), // spin between [0, 2^backoff_shifts) times before retry
-      size_delta(0)
+      size_delta(0),
+      worker_seq(0)
   {
     txn_obj_buf.reserve(str_arena::MinStrReserveLength);
     txn_obj_buf.resize(db->sizeof_txn_object(txn_flags));
@@ -179,6 +184,7 @@ protected:
   inline void *txn_buf() { return (void *) txn_obj_buf.data(); }
 
   unsigned int worker_id;
+  uint64_t worker_seq;
   bool set_core_id;
   util::fast_random r;
   abstract_db *const db;

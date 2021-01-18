@@ -11,6 +11,9 @@
 #include <map>
 #include <type_traits>
 #include <memory>
+#include "benchmarks/global.h"
+
+extern uint64_t get_put_cost;
 
 // each Transaction implementation should specialize this for special
 // behavior- the default implementation is just nops
@@ -228,10 +231,13 @@ base_txn_btree<Transaction, P>::do_search(
   // search the underlying btree to map k=>(btree_node|tuple)
   typename concurrent_btree::value_type underlying_v{};
   concurrent_btree::versioned_node_t search_info;
+  // uint64_t get_start = rdtsc();
   const bool found = this->underlying_btree.search(varkey(*key_str), underlying_v, &search_info);
+  // get_put_cost += rdtsc() - get_start;
   if (found) {
     const dbtuple * const tuple = reinterpret_cast<const dbtuple *>(underlying_v);
-    return t.do_tuple_read(tuple, value_reader);
+    bool result = t.do_tuple_read(tuple, value_reader);
+    return result;
   } else {
     // not found, add to absent_set
     t.do_node_read(search_info.first, search_info.second);
@@ -339,7 +345,11 @@ void base_txn_btree<Transaction, P>::do_tree_put(
   bool insert = false;
 retry:
   if (expect_new) {
+    typename concurrent_btree::value_type bv = 0;
+    bool test_result1 = this->underlying_btree.search(varkey(*k), bv);
     auto ret = t.try_insert_new_tuple(this->underlying_btree, k, v, writer);
+    typename concurrent_btree::value_type bv2 = 0;
+    bool test_result2 = this->underlying_btree.search(varkey(*k), bv2);
     INVARIANT(!ret.second || ret.first);
     if (unlikely(ret.second)) {
       const transaction_base::abort_reason r = transaction_base::ABORT_REASON_WRITE_NODE_INTERFERENCE;

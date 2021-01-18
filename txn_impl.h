@@ -95,7 +95,7 @@ transaction<Protocol, Traits>::cleanup_inserted_tuple_marker(
     std::cerr << " *** original key        : " << util::hexify(marker->key) << std::endl;
 #endif
 #endif
-    ALWAYS_ASSERT(false);
+    // ALWAYS_ASSERT(false);
   }
   INVARIANT(removed == (typename concurrent_btree::value_type) marker);
   INVARIANT(marker->is_latest());
