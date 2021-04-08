@@ -253,8 +253,8 @@ public:
   inline void invariant_checker() const {
   }
 
-          /** NOTE: the public interface assumes that the caller has taken care
-           * of setting up RCU */
+  /** NOTE: the public interface assumes that the caller has taken care
+  * of setting up RCU */
 
   inline bool search(const key_type &k, value_type &v,
                      versioned_node_t *search_info = nullptr) const;
@@ -516,7 +516,7 @@ void mbtree<P>::tree_walk(tree_walk_callback &callback) const {
       auto version = leaf->stable();
       auto perm = leaf->permutation();
       for (int i = 0; i != perm.size(); ++i)
-        if (leaf->is_layer(perm[i]))
+        if (leaf->value_is_layer(perm[i]))
           layers.push_back(leaf->lv_[perm[i]].layer());
       leaf_type *next = leaf->safe_next();
       callback.on_node_begin(leaf);
@@ -555,7 +555,7 @@ mbtree<P>::size_walk_callback::on_node_begin(const node_opaque_t *n)
   auto perm = n->permutation();
   node_size_ = 0;
   for (int i = 0; i != perm.size(); ++i)
-    if (!n->is_layer(perm[i]))
+    if (!n->value_is_layer(perm[i]))
       ++node_size_;
 }
 
