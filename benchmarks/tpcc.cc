@@ -533,7 +533,8 @@ public:
     INVARIANT(warehouse_id_start <= NumWarehouses());
     INVARIANT(warehouse_id_end > warehouse_id_start);
     INVARIANT(warehouse_id_end <= (NumWarehouses() + 1));
-    NDB_MEMSET(&last_no_o_ids[0], 0, sizeof(last_no_o_ids));
+    // NDB_MEMSET(&last_no_o_ids[0], 0, sizeof(last_no_o_ids));
+    NDB_MEMSET(&local_last_no_o_ids[0][0], 0, sizeof(local_last_no_o_ids));
     if (verbose) {
       cerr << "tpcc: worker id " << worker_id
         << " => warehouses [" << warehouse_id_start
@@ -644,13 +645,24 @@ protected:
 private:
   const uint warehouse_id_start;
   const uint warehouse_id_end;
-  int32_t last_no_o_ids[10]; // XXX(stephentu): hack
+  // int32_t last_no_o_ids[10]; // XXX(stephentu): hack
+  int32_t local_last_no_o_ids[64][10]; // XXX(stephentu): hack
+  bool retry = false;
+  int delivery_warehouse = 0;
 
   // some scratch buffer space
   string obj_key0;
   string obj_key1;
   string obj_v;
 };
+
+union access_info {
+  uint32_t last_no_o_ids;
+  char padding[CACHELINE_SIZE];
+  access_info():last_no_o_ids(0){}
+} CACHE_ALIGNED;
+
+access_info dist_last_id[64][10];
 
 class tpcc_warehouse_loader : public bench_loader, public tpcc_worker_mixin {
 public:
@@ -1450,7 +1462,16 @@ STATIC_COUNTER_DECL(scopedperf::tod_ctr, delivery_probe0_tod, delivery_probe0_cg
 tpcc_worker::txn_result
 tpcc_worker::txn_delivery()
 {
-  const uint warehouse_id = PickWarehouseId(r, warehouse_id_start, warehouse_id_end);
+  uint warehouse_id = 0;
+  if (retry)
+  {
+    warehouse_id = delivery_warehouse;
+  }
+  else
+  {
+    warehouse_id = PickWarehouseId(r, warehouse_id_start, warehouse_id_end);
+    delivery_warehouse = warehouse_id;
+  }
   const uint o_carrier_id = RandomNumber(r, 1, NumDistrictsPerWarehouse());
   const uint32_t ts = GetCurrentTimeMillis();
 
@@ -1478,8 +1499,27 @@ tpcc_worker::txn_delivery()
       g_enable_partition_locks ? &LockForPartition(warehouse_id) : nullptr);
   try {
     ssize_t ret = 0;
+    int32_t last_no_o_id[10];
+    uint c_id[10];
+    float ol_total[10];
+    const new_order::key new_order_keys[10];
+
+    //[SCAN NEWORDER]
     for (uint d = 1; d <= NumDistrictsPerWarehouse(); d++) {
-      const new_order::key k_no_0(warehouse_id, d, last_no_o_ids[d - 1]);
+
+      // int district_key = last_no_o_ids[d - 1];
+      int district_key = 0;
+      if (retry)
+      {
+        district_key = local_last_no_o_ids[warehouse_id - 1][ d - 1];
+      }
+      else
+      {
+        district_key = dist_last_id[warehouse_id - 1][ d - 1].last_no_o_ids;
+        local_last_no_o_ids[warehouse_id - 1][d - 1] = district_key;
+      }
+
+      const new_order::key k_no_0(warehouse_id, d, district_key);
       const new_order::key k_no_1(warehouse_id, d, numeric_limits<int32_t>::max());
       new_order_scan_callback new_order_c;
       {
@@ -1488,29 +1528,80 @@ tpcc_worker::txn_delivery()
       }
 
       const new_order::key *k_no = new_order_c.get_key();
-      if (unlikely(!k_no))
-        continue;
-      last_no_o_ids[d - 1] = k_no->no_o_id + 1; // XXX: update last seen
 
-      const oorder::key k_oo(warehouse_id, d, k_no->no_o_id);
-      if (unlikely(!tbl_oorder(warehouse_id)->get(txn, Encode(obj_key0, k_oo), obj_v))) {
-        // even if we read the new order entry, there's no guarantee
-        // we will read the oorder entry: in this case the txn will abort,
-        // but we're simply bailing out early
-        db->abort_txn(txn);
-        return txn_result(false, 0);
+      if (unlikely(!k_no)) {
+        last_no_o_id[d - 1] = -1;
+        continue;
       }
+      new_order_keys[d - 1] = *k_no;
+      last_no_o_id[d - 1] = k_no->no_o_id;
+    }
+
+      // if (unlikely(!k_no))
+      //   continue;
+      // last_no_o_ids[d - 1] = k_no->no_o_id + 1; // XXX: update last seen
+
+    //[DELETE NEWORDER]
+    for (uint d = 1; d <= NumDistrictsPerWarehouse(); d++) {
+
+      if(last_no_o_id[d - 1] == -1)
+        continue;
+
+      // access_id 19 delete new_order
+      tbl_new_order(warehouse_id)->remove(
+          txn, Encode(str(), new_order_keys[d - 1]));
+    }
+
+    if (!retry)
+    {
+      retry = true;
+      for (uint d = 1; d <= NumDistrictsPerWarehouse(); d++) {
+        if(last_no_o_id[d - 1] != -1)
+        {
+          dist_last_id[warehouse_id - 1][ d - 1].last_no_o_ids = last_no_o_id[d - 1] + 1;
+        }
+      }
+    }
+
+    //[ORDER]
+    for (uint d = 1; d <= NumDistrictsPerWarehouse(); d++) {
+
+      if(last_no_o_id[d - 1] == -1)
+        continue;
+
+      const oorder::key k_oo(warehouse_id, d, last_no_o_id[d - 1]);
+      // access_id 20 read order
+      if(!tbl_oorder(warehouse_id)->get(
+              txn, Encode(obj_key0, k_oo), obj_v, std::string::npos))
+        continue;
+        
       oorder::value v_oo_temp;
       const oorder::value *v_oo = Decode(obj_v, v_oo_temp);
       checker::SanityCheckOOrder(&k_oo, v_oo);
 
-      static_limit_callback<15> c(s_arena.get(), false); // never more than 15 order_lines per order
-      const order_line::key k_oo_0(warehouse_id, d, k_no->no_o_id, 0);
-      const order_line::key k_oo_1(warehouse_id, d, k_no->no_o_id, numeric_limits<int32_t>::max());
+      oorder::value v_oo_new(*v_oo);
+      v_oo_new.o_carrier_id = o_carrier_id;
+      // access_id 21 write order
+      tbl_oorder(warehouse_id)->put(
+          txn, Encode(str(), k_oo), Encode(str(), v_oo_new));
+      c_id[d - 1] = v_oo->o_c_id;
+    }
 
-      // XXX(stephentu): mutable scans would help here
-      tbl_order_line(warehouse_id)->scan(txn, Encode(obj_key0, k_oo_0), &Encode(obj_key1, k_oo_1), c, s_arena.get());
+    //[ORDER_LINE]
+    for (uint d = 1; d <= NumDistrictsPerWarehouse(); d++) {
+
+      if(last_no_o_id[d - 1] == -1)
+        continue;
+
+      static_limit_callback<15> c(s_arena.get(), false); // never more than 15 order_lines per order
+      const order_line::key k_oo_0(warehouse_id, d, last_no_o_id[d - 1], 0);
+      const order_line::key k_oo_1(warehouse_id, d, last_no_o_id[d - 1], numeric_limits<int32_t>::max());
+
+      // access_id 22 scan order_line
+      tbl_order_line(warehouse_id)->scan(txn, Encode(str(), k_oo_0), &Encode(str(), k_oo_1), 
+                                          c, s_arena.get());
       float sum = 0.0;
+      ALWAYS_ASSERT(c.size() <= 15);
       for (size_t i = 0; i < c.size(); i++) {
         order_line::value v_ol_temp;
         const order_line::value *v_ol = Decode(*c.values[i].second, v_ol_temp);
@@ -1525,34 +1616,40 @@ tpcc_worker::txn_delivery()
         order_line::value v_ol_new(*v_ol);
         v_ol_new.ol_delivery_d = ts;
         INVARIANT(s_arena.get()->manages(c.values[i].first));
-        tbl_order_line(warehouse_id)->put(txn, *c.values[i].first, Encode(str(), v_ol_new));
+
+        // access_id 23 write order_line
+        tbl_order_line(warehouse_id)->put(
+            txn, *c.values[i].first, Encode(str(), v_ol_new));
       }
 
-      // delete new order
-      tbl_new_order(warehouse_id)->remove(txn, Encode(str(), *k_no));
-      ret -= 0 /*new_order_c.get_value_size()*/;
+      ol_total[d - 1] = sum;
+    }
 
-      // update oorder
-      oorder::value v_oo_new(*v_oo);
-      v_oo_new.o_carrier_id = o_carrier_id;
-      tbl_oorder(warehouse_id)->put(txn, Encode(str(), k_oo), Encode(str(), v_oo_new));
+    //[CUSTOMER]
+    for (uint d = 1; d <= NumDistrictsPerWarehouse(); d++) {
+      
+      if(last_no_o_id[d - 1] == -1) 
+        continue;
 
-      const uint c_id = v_oo->o_c_id;
-      const float ol_total = sum;
-
-      // update customer
-      const customer::key k_c(warehouse_id, d, c_id);
-      ALWAYS_ASSERT(tbl_customer(warehouse_id)->get(txn, Encode(obj_key0, k_c), obj_v));
+      const customer::key k_c(warehouse_id, d, c_id[d - 1]);
+      // access_id 24 read customer
+      if(!tbl_customer(warehouse_id)->get(
+              txn, Encode(obj_key0, k_c), obj_v, std::string::npos))
+        continue;
 
       customer::value v_c_temp;
       const customer::value *v_c = Decode(obj_v, v_c_temp);
       customer::value v_c_new(*v_c);
-      v_c_new.c_balance += ol_total;
-      tbl_customer(warehouse_id)->put(txn, Encode(str(), k_c), Encode(str(), v_c_new));
+      v_c_new.c_balance += ol_total[d - 1];
+      // access_id 25 write customer
+      tbl_customer(warehouse_id)->put(
+          txn, Encode(str(), k_c), Encode(str(), v_c_new));
     }
     measure_txn_counters(txn, "txn_delivery");
-    if (likely(db->commit_txn(txn)))
+    if (likely(db->commit_txn(txn))) {
+      retry = false;
       return txn_result(true, ret);
+    }
   } catch (abstract_db::abstract_abort_exception &ex) {
     db->abort_txn(txn);
   }
