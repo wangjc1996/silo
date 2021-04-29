@@ -69,7 +69,7 @@ struct hint_tpcc_payment_traits {
   static const size_t write_set_expected_size = 10;
   static const size_t absent_set_expected_size = 15;
   static const bool stable_input_memory = true;
-  static const bool hard_expected_sizes = false;
+  static const bool hard_expected_sizes = true;
   static const bool read_own_writes = false;
   typedef str_arena StringAllocator;
 };
