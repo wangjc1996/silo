@@ -4,6 +4,7 @@
 #include <vector>
 #include <utility>
 #include <string>
+#include <algorithm>
 
 #include <stdlib.h>
 #include <sched.h>
@@ -120,20 +121,90 @@ bench_worker::run()
   txn_counts.resize(workload.size());
   barrier_a->count_down();
   barrier_b->wait_for();
+
+  timer t;
+  bool is_retry = false;
   while (running && (run_mode != RUNMODE_OPS || ntxn_commits < ops_per_worker)) {
     double d = r.next_uniform();
     for (size_t i = 0; i < workload.size(); i++) {
       if ((i + 1) == workload.size() || d < workload[i].frequency) {
       retry:
-        timer t;
+        // timer t;
+        if (is_retry) {
+          is_retry = false;
+        } else {
+          t.lap();
+        }
         const unsigned long old_seed = r.get_seed();
         const auto ret = workload[i].fn(this);
         if (likely(ret.first)) {
           ++ntxn_commits;
-          latency_numer_us += t.lap();
+          // latency_numer_us += t.lap();
           backoff_shifts >>= 1;
+          uint64_t time = t.lap();
+          switch(ret.second)
+          {
+            case 1:
+            {
+              ++ntxn_commits_new_order;
+              tail_latency1.emplace_back(time);
+              break;
+            }
+            case 2:
+            {
+              ++ntxn_commits_payment;
+              tail_latency2.emplace_back(time);
+              break;
+            }
+            case 3:
+            {
+              ++ntxn_commits_delivery;
+              tail_latency3.emplace_back(time);
+              break;
+            }
+            case 4:
+            {
+              ++ntxn_commits_order_status;
+              tail_latency4.emplace_back(time);
+              break;
+            }
+            case 5:
+            {
+              ++ntxn_commits_stock_level;
+              tail_latency5.emplace_back(time);
+              break;
+            }
+          }
         } else {
           ++ntxn_aborts;
+          switch(ret.second)
+          {
+            case 1:
+            {
+              ++ntxn_aborts_new_order;
+              break;
+            }
+            case 2:
+            {
+              ++ntxn_aborts_payment;
+              break;
+            }
+            case 3:
+            {
+              ++ntxn_aborts_delivery;
+              break;
+            }
+            case 4:
+            {
+              ++ntxn_aborts_order_status;
+              break;
+            }
+            case 5:
+            {
+              ++ntxn_aborts_stock_level;
+              break;
+            }
+          }
           if (retry_aborted_transaction && running) {
             if (backoff_aborted_transaction) {
               if (backoff_shifts < 63)
@@ -147,6 +218,7 @@ bench_worker::run()
               }
             }
             r.set_seed(old_seed);
+            is_retry = true;
             goto retry;
           }
         }
@@ -245,13 +317,196 @@ bench_runner::run()
   const unsigned long elapsed_nosync = t_nosync.lap();
   db->do_txn_finish(); // waits for all worker txns to persist
   size_t n_commits = 0;
+  size_t n_commits_new_order = 0;
+  size_t n_commits_payment = 0;
+  size_t n_commits_delivery = 0;
+  size_t n_commits_order_status = 0;
+  size_t n_commits_stock_level = 0;
   size_t n_aborts = 0;
+  size_t n_aborts_new_order = 0;
+  size_t n_aborts_payment = 0;
+  size_t n_aborts_delivery = 0;
+  size_t n_aborts_order_status = 0;
+  size_t n_aborts_stock_level = 0;
   uint64_t latency_numer_us = 0;
+
+  std::vector<uint64_t> total_latency;
+  std::vector<uint64_t> latency1;
+  std::vector<uint64_t> latency2;
+  std::vector<uint64_t> latency3;
+  std::vector<uint64_t> latency4;
+  std::vector<uint64_t> latency5;
+  total_latency.reserve(1 << 16);
+  latency1.reserve(1 << 16);
+  latency2.reserve(1 << 16);
+  latency3.reserve(1 << 16);
+  latency4.reserve(1 << 16);
+  latency5.reserve(1 << 16);
+
+  uint64_t all_txns_sum = 0;
+  uint64_t new_order_sum = 0;
+  uint64_t payment_sum = 0;
+  uint64_t delivery_sum = 0;
+  uint64_t order_status_sum = 0;
+  uint64_t stock_level_sum = 0;
+
   for (size_t i = 0; i < nthreads; i++) {
     n_commits += workers[i]->get_ntxn_commits();
+    n_commits_new_order += workers[i]->get_ntxn_commits_new_order();
+    n_commits_payment += workers[i]->get_ntxn_commits_payment();
+    n_commits_delivery += workers[i]->get_ntxn_commits_delivery();
+    n_commits_order_status += workers[i]->get_ntxn_commits_order_status();
+    n_commits_stock_level += workers[i]->get_ntxn_commits_stock_level();
+
     n_aborts += workers[i]->get_ntxn_aborts();
+    n_aborts_new_order += workers[i]->get_ntxn_aborts_new_order();
+    n_aborts_payment += workers[i]->get_ntxn_aborts_payment();
+    n_aborts_delivery += workers[i]->get_ntxn_aborts_delivery();
+    n_aborts_order_status += workers[i]->get_ntxn_aborts_order_status();
+    n_aborts_stock_level += workers[i]->get_ntxn_aborts_stock_level();
+
     latency_numer_us += workers[i]->get_latency_numer_us();
+    std::vector<uint64_t> vec1 = workers[i]->get_tail_latency1();
+    std::vector<uint64_t> vec2 = workers[i]->get_tail_latency2();
+    std::vector<uint64_t> vec3 = workers[i]->get_tail_latency3();
+    std::vector<uint64_t> vec4 = workers[i]->get_tail_latency4();
+    std::vector<uint64_t> vec5 = workers[i]->get_tail_latency5();
+    for (auto item : vec1) {
+      total_latency.emplace_back(item);
+      all_txns_sum += item;
+      latency1.emplace_back(item);
+      new_order_sum += item;
+    }
+    for (auto item : vec2) {
+      total_latency.emplace_back(item);
+      all_txns_sum += item;
+      latency2.emplace_back(item);
+      payment_sum += item;
+    }
+    for (auto item : vec3) {
+      total_latency.emplace_back(item);
+      all_txns_sum += item;
+      latency3.emplace_back(item);
+      delivery_sum += item;
+    }
+    for (auto item : vec4) {
+      total_latency.emplace_back(item);
+      all_txns_sum += item;
+      latency4.emplace_back(item);
+      order_status_sum += item;
+    }
+    for (auto item : vec5) {
+      total_latency.emplace_back(item);
+      all_txns_sum += item;
+      latency5.emplace_back(item);
+      stock_level_sum += item;
+    }
   }
+
+  std::sort(total_latency.begin(), total_latency.end());
+  std::sort(latency1.begin(), latency1.end());
+  std::sort(latency2.begin(), latency2.end());
+  std::sort(latency3.begin(), latency3.end());
+  std::sort(latency4.begin(), latency4.end());
+  std::sort(latency5.begin(), latency5.end());
+
+  double all_txns_avg = (double) all_txns_sum / (double) total_latency.size();
+  uint64_t all_txns_p50 = total_latency[(uint64_t) (total_latency.size() * 0.5)];
+  uint64_t all_txns_p90 = total_latency[(uint64_t) (total_latency.size() * 0.9)];
+  uint64_t all_txns_p95 = total_latency[(uint64_t) (total_latency.size() * 0.95)];
+  uint64_t all_txns_p99 = total_latency[(uint64_t) (total_latency.size() * 0.99)];
+  uint64_t all_txns_p999 = total_latency[(uint64_t) (total_latency.size() * 0.999)];
+  uint64_t all_txns_p9999 = total_latency[(uint64_t) (total_latency.size() * 0.9999)];
+
+  std::cout << "Latency - microseconds(µs)" << std::endl;
+  std::cout << "all_txns_avg latency - " << all_txns_avg << std::endl;
+  std::cout << "all_txns_p50 latency - " << all_txns_p50 << std::endl;
+  std::cout << "all_txns_p90 latency - " << all_txns_p90 << std::endl;
+  std::cout << "all_txns_p95 latency - " << all_txns_p95 << std::endl;
+  std::cout << "all_txns_p99 latency - " << all_txns_p99 << std::endl;
+  std::cout << "all_txns_p999 latency - " << all_txns_p999 << std::endl;
+  std::cout << "all_txns_p9999 latency - " << all_txns_p9999 << std::endl;
+
+  double new_order_avg = (double) new_order_sum / (double) latency1.size();
+  uint64_t new_order_p50 = latency1[(uint64_t) (latency1.size() * 0.5)];
+  uint64_t new_order_p90 = latency1[(uint64_t) (latency1.size() * 0.9)];
+  uint64_t new_order_p95 = latency1[(uint64_t) (latency1.size() * 0.95)];
+  uint64_t new_order_p99 = latency1[(uint64_t) (latency1.size() * 0.99)];
+  uint64_t new_order_p999 = latency1[(uint64_t) (latency1.size() * 0.999)];
+  uint64_t new_order_p9999 = latency1[(uint64_t) (latency1.size() * 0.9999)];
+
+  std::cout << "new_order_avg latency - " << new_order_avg << std::endl;
+  std::cout << "new_order_p50 latency - " << new_order_p50 << std::endl;
+  std::cout << "new_order_p90 latency - " << new_order_p90 << std::endl;
+  std::cout << "new_order_p95 latency - " << new_order_p95 << std::endl;
+  std::cout << "new_order_p99 latency - " << new_order_p99 << std::endl;
+  std::cout << "new_order_p999 latency - " << new_order_p999 << std::endl;
+  std::cout << "new_order_p9999 latency - " << new_order_p9999 << std::endl;
+
+  double payment_avg = (double) payment_sum / (double) latency2.size();
+  uint64_t payment_p50 = latency2[(uint64_t) (latency2.size() * 0.5)];
+  uint64_t payment_p90 = latency2[(uint64_t) (latency2.size() * 0.9)];
+  uint64_t payment_p95 = latency2[(uint64_t) (latency2.size() * 0.95)];
+  uint64_t payment_p99 = latency2[(uint64_t) (latency2.size() * 0.99)];
+  uint64_t payment_p999 = latency2[(uint64_t) (latency2.size() * 0.999)];
+  uint64_t payment_p9999 = latency2[(uint64_t) (latency2.size() * 0.9999)];
+
+  std::cout << "payment_avg latency - " << payment_avg << std::endl;
+  std::cout << "payment_p50 latency - " << payment_p50 << std::endl;
+  std::cout << "payment_p90 latency - " << payment_p90 << std::endl;
+  std::cout << "payment_p95 latency - " << payment_p95 << std::endl;
+  std::cout << "payment_p99 latency - " << payment_p99 << std::endl;
+  std::cout << "payment_p999 latency - " << payment_p999 << std::endl;
+  std::cout << "payment_p9999 latency - " << payment_p9999 << std::endl;
+
+  double delivery_avg = (double) delivery_sum / (double) latency3.size();
+  uint64_t delivery_p50 = latency3[(uint64_t) (latency3.size() * 0.5)];
+  uint64_t delivery_p90 = latency3[(uint64_t) (latency3.size() * 0.9)];
+  uint64_t delivery_p95 = latency3[(uint64_t) (latency3.size() * 0.95)];
+  uint64_t delivery_p99 = latency3[(uint64_t) (latency3.size() * 0.99)];
+  uint64_t delivery_p999 = latency3[(uint64_t) (latency3.size() * 0.999)];
+  uint64_t delivery_p9999 = latency3[(uint64_t) (latency3.size() * 0.9999)];
+  
+  std::cout << "delivery_avg latency - " << delivery_avg << std::endl;
+  std::cout << "delivery_p50 latency - " << delivery_p50 << std::endl;
+  std::cout << "delivery_p90 latency - " << delivery_p90 << std::endl;
+  std::cout << "delivery_p95 latency - " << delivery_p95 << std::endl;
+  std::cout << "delivery_p99 latency - " << delivery_p99 << std::endl;
+  std::cout << "delivery_p999 latency - " << delivery_p999 << std::endl;
+  std::cout << "delivery_p9999 latency - " << delivery_p9999 << std::endl;
+
+  double order_status_avg = (double) order_status_sum / (double) latency4.size();
+  uint64_t order_status_p50 = latency4[(uint64_t) (latency4.size() * 0.5)];
+  uint64_t order_status_p90 = latency4[(uint64_t) (latency4.size() * 0.9)];
+  uint64_t order_status_p95 = latency4[(uint64_t) (latency4.size() * 0.95)];
+  uint64_t order_status_p99 = latency4[(uint64_t) (latency4.size() * 0.99)];
+  uint64_t order_status_p999 = latency4[(uint64_t) (latency4.size() * 0.999)];
+  uint64_t order_status_p9999 = latency4[(uint64_t) (latency4.size() * 0.9999)];
+  
+  std::cout << "order_status_avg latency - " << order_status_avg << std::endl;
+  std::cout << "order_status_p50 latency - " << order_status_p50 << std::endl;
+  std::cout << "order_status_p90 latency - " << order_status_p90 << std::endl;
+  std::cout << "order_status_p95 latency - " << order_status_p95 << std::endl;
+  std::cout << "order_status_p99 latency - " << order_status_p99 << std::endl;
+  std::cout << "order_status_p999 latency - " << order_status_p999 << std::endl;
+  std::cout << "order_status_p9999 latency - " << order_status_p9999 << std::endl;
+
+  double stock_level_avg = (double) stock_level_sum / (double) latency5.size();
+  uint64_t stock_level_p50 = latency5[(uint64_t) (latency5.size() * 0.5)];
+  uint64_t stock_level_p90 = latency5[(uint64_t) (latency5.size() * 0.9)];
+  uint64_t stock_level_p95 = latency5[(uint64_t) (latency5.size() * 0.95)];
+  uint64_t stock_level_p99 = latency5[(uint64_t) (latency5.size() * 0.99)];
+  uint64_t stock_level_p999 = latency5[(uint64_t) (latency5.size() * 0.999)];
+  uint64_t stock_level_p9999 = latency5[(uint64_t) (latency5.size() * 0.9999)];
+  
+  std::cout << "stock_level_avg latency - " << stock_level_avg << std::endl;
+  std::cout << "stock_level_p50 latency - " << stock_level_p50 << std::endl;
+  std::cout << "stock_level_p90 latency - " << stock_level_p90 << std::endl;
+  std::cout << "stock_level_p95 latency - " << stock_level_p95 << std::endl;
+  std::cout << "stock_level_p99 latency - " << stock_level_p99 << std::endl;
+  std::cout << "stock_level_p999 latency - " << stock_level_p999 << std::endl;
+  std::cout << "stock_level_p9999 latency - " << stock_level_p9999 << std::endl;
+
   const auto persisted_info = db->get_ntxn_persisted();
 
   const unsigned long elapsed = t.lap(); // lap() must come after do_txn_finish(),
@@ -269,12 +524,27 @@ bench_runner::run()
 
   const double elapsed_sec = double(elapsed) / 1000000.0;
   const double agg_throughput = double(n_commits) / elapsed_sec;
+  const double agg_throughput_new_order = double(n_commits_new_order) / elapsed_sec;
+  const double agg_throughput_payment = double(n_commits_payment) / elapsed_sec;
+  const double agg_throughput_delivery = double(n_commits_delivery) / elapsed_sec;
+  const double agg_throughput_order_status = double(n_commits_order_status) / elapsed_sec;
+  const double agg_throughput_stock_level = double(n_commits_stock_level) / elapsed_sec;
   const double avg_per_core_throughput = agg_throughput / double(workers.size());
 
   const double agg_abort_throughput = double(n_aborts) / elapsed_sec;
-  const double avg_per_core_abort_rate = agg_abort_throughput / double(workers.size());
+  const double agg_abort_throughput_new_order = double(n_aborts_new_order) / elapsed_sec;
+  const double agg_abort_throughput_payment = double(n_aborts_payment) / elapsed_sec;
+  const double agg_abort_throughput_delivery = double(n_aborts_delivery) / elapsed_sec;
+  const double agg_abort_throughput_order_status = double(n_aborts_order_status) / elapsed_sec;
+  const double agg_abort_throughput_stock_level = double(n_aborts_stock_level) / elapsed_sec;
 
   const double agg_abort_rate = double(n_aborts) / (n_commits + n_aborts);//elapsed_sec;
+  const double agg_abort_rate_new_order = double(n_aborts_new_order) / (n_commits_new_order + n_aborts_new_order);//elapsed_sec;
+  const double agg_abort_rate_payment = double(n_aborts_payment) / (n_commits_payment + n_aborts_payment);//elapsed_sec;
+  const double agg_abort_rate_delivery = double(n_aborts_delivery) / (n_commits_delivery + n_aborts_delivery);//elapsed_sec;
+  const double agg_abort_rate_order_status = double(n_aborts_order_status) / (n_commits_order_status + n_aborts_order_status);//elapsed_sec;
+  const double agg_abort_rate_stock_level = double(n_aborts_stock_level) / (n_commits_stock_level + n_aborts_stock_level);//elapsed_sec;
+  const double avg_per_core_abort_rate = agg_abort_throughput / double(workers.size());
 
   // we can use n_commits here, because we explicitly wait for all txns
   // run to be durable
@@ -366,13 +636,27 @@ bench_runner::run()
 
   // output for plotting script
   cout << "RESULT "
-      << "agg_throughput(" << agg_throughput << "),"
-      << "agg_persist_throughput(" << agg_persist_throughput << "),"
-      << "avg_latency_ms(" << avg_latency_ms << "),"
-      << "avg_persist_latency_ms(" << avg_persist_latency_ms << "),"
-      << "agg_abort_throughput(" << agg_abort_throughput << "),"
-      << "agg_abort_rate(" << agg_abort_rate << "),"
-      << "0" <<endl;
+       << "agg_throughput(" << agg_throughput << ")," << endl
+       << "agg_new_order_throughput(" << agg_throughput_new_order << ")," << endl
+       << "agg_payment_throughput(" << agg_throughput_payment << ")," << endl
+       << "agg_delivery_throughput(" << agg_throughput_delivery << ")," << endl
+       << "agg_order_status_throughput(" << agg_throughput_order_status << ")," << endl
+       << "agg_stock_level_throughput(" << agg_throughput_stock_level << ")," << endl
+       << "agg_persist_throughput(" << agg_persist_throughput << ")," << endl
+       << "avg_latency_ms(" << avg_latency_ms << ")," << endl
+       << "avg_persist_latency_ms(" << avg_persist_latency_ms << ")," << endl
+       << "agg_abort_throughput(" << agg_abort_throughput << ")," << endl
+       << "agg_abort_throughput_new_order(" << agg_abort_throughput_new_order << ")," << endl
+       << "agg_abort_throughput_payment(" << agg_abort_throughput_payment << ")," << endl
+       << "agg_abort_throughput_delivery(" << agg_abort_throughput_delivery << ")," << endl
+       << "agg_abort_throughput_order_status(" << agg_abort_throughput_order_status << ")," << endl
+       << "agg_abort_throughput_stock_level(" << agg_abort_throughput_stock_level << ")," << endl
+       << "agg_abort_rate(" << agg_abort_rate << ")," << endl
+       << "agg_abort_rate_new_order(" << agg_abort_rate_new_order << ")," << endl
+       << "agg_abort_rate_payment(" << agg_abort_rate_payment << ")," << endl
+       << "agg_abort_rate_delivery(" << agg_abort_rate_delivery << ")," << endl
+       << "agg_abort_rate_order_status(" << agg_abort_rate_order_status << ")," << endl
+       << "agg_abort_rate_stock_level(" << agg_abort_rate_stock_level << ")," << endl;
   cout.flush();
 
   if (!slow_exit)
